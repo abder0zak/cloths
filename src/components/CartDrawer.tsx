@@ -219,7 +219,7 @@ export default function CartDrawer({
                           +
                         </button>
                       </div>
-                      <span className="text-xs font-medium">${(item.product.price * item.quantity).toFixed(2)}</span>
+                      <span className="text-xs font-medium">{(item.product.price * item.quantity).toFixed(2)} DA</span>
                     </div>
                   </div>
                 </div>
@@ -296,7 +296,7 @@ export default function CartDrawer({
           <div className="border-t border-[#eae8e7] dark:border-[#222222] pt-6 space-y-6">
             <div className="flex justify-between items-center text-sm font-medium uppercase tracking-wider">
               <span>Subtotal</span>
-              <span className="font-bold">${total.toFixed(2)}</span>
+              <span className="font-bold">{total.toFixed(2)} DA</span>
             </div>
 
             <form onSubmit={handleCheckout} className="space-y-4">

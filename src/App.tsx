@@ -133,13 +133,13 @@ export default function App() {
             case 'ORDER_PLACED':
               // Alert trigger for purchase notifications
               setEventsLog(prev => [
-                { message: `SECURE SALE: Client placed order ${payload.orderId} for an aggregate total of $${payload.total.toFixed(2)}.`, timestamp: new Date().toLocaleTimeString() },
+                { message: `SECURE SALE: Client placed order ${payload.orderId} for an aggregate total of ${payload.total.toFixed(2)} DA.`, timestamp: new Date().toLocaleTimeString() },
                 ...prev
               ]);
               // Trigger temporary screen toast alert
               setToastMessage({
                 title: 'Boutique Acquisition',
-                body: `An order for $${payload.total.toFixed(2)} was just secured through our payment gateway.`
+                body: `An order for ${payload.total.toFixed(2)} DA was just secured through our payment gateway.`
               });
               // Auto remove toast
               setTimeout(() => setToastMessage(null), 5000);
@@ -484,7 +484,7 @@ export default function App() {
                             </h3>
                             <div className="flex justify-between items-center text-xs">
                               <span className="text-[#747878] uppercase tracking-wider text-[11px] font-medium">Retail Valuation</span>
-                              <span className="font-bold text-black dark:text-white">${p.price.toFixed(2)}</span>
+                              <span className="font-bold text-black dark:text-white">{p.price.toFixed(2)} DA</span>
                             </div>
                           </div>
                         </div>
@@ -626,7 +626,7 @@ export default function App() {
                 <div className="space-y-3">
                   <span className="text-[10px] uppercase tracking-widest text-indigo-500 font-extrabold">Curated Piece</span>
                   <h2 className="font-display text-2xl font-black tracking-tight leading-tight uppercase text-slate-900 dark:text-slate-100">{selectedProduct.name}</h2>
-                  <p className="text-sm font-extrabold text-indigo-600 dark:text-indigo-400">${selectedProduct.price.toFixed(2)}</p>
+                  <p className="text-sm font-extrabold text-indigo-600 dark:text-indigo-400">{selectedProduct.price.toFixed(2)} DA</p>
                   <p className="text-xs text-slate-600 dark:text-slate-400 leading-relaxed line-clamp-4">
                     {selectedProduct.description}
                   </p>

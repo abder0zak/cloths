@@ -429,7 +429,7 @@ export default function Dashboard({
     doc.text('Store Telemetry (Live)', 110, 52);
     doc.setFont('Helvetica', 'normal');
     doc.text(`Active Online Sessions: ${stats.activeShoppers}`, 110, 59);
-    doc.text(`Today's Sales Volume: $${stats.totalSalesToday.toFixed(2)}`, 110, 65);
+    doc.text(`Today's Sales Volume: ${stats.totalSalesToday.toFixed(2)} DA`, 110, 65);
     doc.text(`Orders Processed: ${stats.ordersProcessed}`, 110, 71);
 
     doc.line(20, 80, 190, 80);
@@ -461,7 +461,7 @@ export default function Dashboard({
         doc.text(`Tracking: ${order.trackingNumber}`, 20, startY + 5);
         doc.text(`Placed: ${new Date(order.createdAt).toLocaleDateString()}`, 20, startY + 10);
         doc.setTextColor(173, 50, 28); // Terracotta for price
-        doc.text(`Settled Amount: $${order.total.toFixed(2)}`, 110, startY);
+        doc.text(`Settled Amount: ${order.total.toFixed(2)} DA`, 110, startY);
 
         doc.setTextColor(116, 120, 120);
         const orderItemsStr = order.items.map(i => `${i.product.name} (${i.selectedSize}) x${i.quantity}`).join(', ');
@@ -723,7 +723,7 @@ export default function Dashboard({
                   <div className="col-span-5 font-bold text-slate-700 dark:text-slate-300 truncate pr-2">
                     {o.items.map(i => `${i.product.name} (${i.selectedSize})`).join(', ')}
                   </div>
-                  <span className="col-span-2 font-mono font-bold text-slate-900 dark:text-slate-100">${o.total.toFixed(2)}</span>
+                  <span className="col-span-2 font-mono font-bold text-slate-900 dark:text-slate-100">{o.total.toFixed(2)} DA</span>
                   <div className="col-span-2 text-right">
                     <span className={`inline-flex items-center gap-1 text-[10px] font-extrabold uppercase italic ${
                       o.status === 'delivered' ? 'text-emerald-500' :
@@ -945,10 +945,10 @@ export default function Dashboard({
                     {/* Retail Valuation Price */}
                     <div className="space-y-2">
                       <label className="block text-[11px] uppercase tracking-wider text-slate-500 dark:text-slate-400 font-bold">
-                        Retail Price (USD) <span className="text-rose-500">*</span>
+                        Retail Price (DA) <span className="text-rose-500">*</span>
                       </label>
                       <div className="relative">
-                        <span className="absolute left-4 top-3 text-slate-400 text-sm font-medium">$</span>
+                        <span className="absolute left-4 top-3 text-slate-400 text-xs font-bold">DA</span>
                         <input
                           type="number"
                           step="0.01"
@@ -1120,7 +1120,7 @@ export default function Dashboard({
                         <div className="min-w-0">
                           <p className="font-bold text-slate-950 dark:text-slate-50 text-xs truncate">{p.name}</p>
                           <p className="text-[10px] text-slate-400 uppercase font-bold tracking-tight mt-0.5">{p.collection}</p>
-                          <p className="text-[11px] font-mono font-bold text-indigo-600 dark:text-indigo-400 mt-1">${p.price.toFixed(2)}</p>
+                          <p className="text-[11px] font-mono font-bold text-indigo-600 dark:text-indigo-400 mt-1">{p.price.toFixed(2)} DA</p>
                         </div>
                       </div>
                       
@@ -1168,7 +1168,7 @@ export default function Dashboard({
                             <p className="text-[10px] text-slate-400 font-mono">{o.email}</p>
                           </div>
                           <div className="flex items-center gap-2">
-                            <span className="font-mono text-slate-900 dark:text-slate-100 font-bold">${o.total.toFixed(2)}</span>
+                            <span className="font-mono text-slate-900 dark:text-slate-100 font-bold">{o.total.toFixed(2)} DA</span>
                             <button
                               onClick={() => handleDeleteOrder(o.id)}
                               disabled={statusUpdating === o.id}

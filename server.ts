@@ -4,7 +4,6 @@ import crypto from 'crypto';
 import jwt from 'jsonwebtoken';
 import http from 'http';
 import { WebSocketServer, WebSocket } from 'ws';
-import { createServer as createViteServer } from 'vite';
 import { readDb, writeDb, encryptText, decryptText } from './server/dbStore.js';
 import { rateLimiterMiddleware } from './server/rateLimiter.js';
 import { User, Order, Product, Notification, CartItem } from './src/types';
@@ -825,6 +824,7 @@ async function startServer() {
 
   // Mount Vite middleware for development, serving assets in production
   if (process.env.NODE_ENV !== 'production') {
+    const { createServer: createViteServer } = await import('vite');
     const vite = await createViteServer({
       server: { middlewareMode: true },
       appType: 'spa'

@@ -348,6 +348,38 @@ export default function Dashboard({
     }
   };
 
+  const handleDeleteOrder = async (orderId: string) => {
+    if (!window.confirm(`Are you sure you want to refuse and delete Order #${orderId}? This will remove the transaction and dispatch a rejection alert to the user's email logs.`)) {
+      return;
+    }
+    setStatusUpdating(orderId);
+    try {
+      const token = localStorage.getItem('ethos_session_token');
+      const res = await fetch(`/api/orders/${orderId}`, {
+        method: 'DELETE',
+        headers: {
+          'Authorization': `Bearer ${token}`
+        }
+      });
+
+      if (res.ok) {
+        setProdSuccess(`Order #${orderId} has been successfully refused and deleted.`);
+        setTimeout(() => setProdSuccess(null), 4000);
+        await fetchOrdersAndLogs();
+      } else {
+        const errData = await res.json();
+        setProdError(errData.error || 'Failed to refuse and delete order.');
+        setTimeout(() => setProdError(null), 4000);
+      }
+    } catch (err) {
+      console.error('Failed to delete order', err);
+      setProdError('Network error deleting order.');
+      setTimeout(() => setProdError(null), 4000);
+    } finally {
+      setStatusUpdating(null);
+    }
+  };
+
   const toggleAddressReveal = (orderId: string) => {
     setRevealedAddresses(prev => ({
       ...prev,
@@ -1127,10 +1159,25 @@ export default function Dashboard({
                       <div key={o.id} className="border border-slate-100 dark:border-slate-800/80 p-4 rounded-2xl bg-slate-50/50 dark:bg-slate-950/20 space-y-3.5 text-xs">
                         <div className="flex justify-between items-start">
                           <div>
-                            <p className="font-bold text-slate-900 dark:text-slate-100">Order #{o.id}</p>
+                            <p className="font-bold text-slate-900 dark:text-slate-100 flex items-center gap-1.5">
+                              Order #{o.id}
+                              {o.status === 'refused' && (
+                                <span className="text-[9px] bg-red-100 text-red-600 dark:bg-red-950/40 dark:text-red-400 font-extrabold px-1.5 py-0.5 rounded uppercase">Refused</span>
+                              )}
+                            </p>
                             <p className="text-[10px] text-slate-400 font-mono">{o.email}</p>
                           </div>
-                          <span className="font-mono text-slate-900 dark:text-slate-100 font-bold">${o.total.toFixed(2)}</span>
+                          <div className="flex items-center gap-2">
+                            <span className="font-mono text-slate-900 dark:text-slate-100 font-bold">${o.total.toFixed(2)}</span>
+                            <button
+                              onClick={() => handleDeleteOrder(o.id)}
+                              disabled={statusUpdating === o.id}
+                              className="p-1.5 bg-red-500/10 hover:bg-red-500/20 text-red-600 dark:text-red-400 rounded-xl transition-all"
+                              title="Refuse & Delete Order"
+                            >
+                              <Trash size={12} />
+                            </button>
+                          </div>
                         </div>
 
                         {/* Dropdown status update controller */}

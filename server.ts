@@ -730,6 +730,55 @@ async function startServer() {
     res.json({ order: db.orders[orderIndex], notification: statusNotification });
   });
 
+  // Admin - Delete / Refuse Order
+  app.delete('/api/orders/:id', authenticateToken, (req: any, res) => {
+    const { id } = req.params;
+
+    if (req.user.role !== 'admin') {
+      return res.status(403).json({ error: 'Administrative privileges required' });
+    }
+
+    const db = readDb();
+    const orderIndex = db.orders.findIndex(o => o.id === id);
+    if (orderIndex === -1) {
+      return res.status(404).json({ error: 'Order not found' });
+    }
+
+    const removedOrder = db.orders.splice(orderIndex, 1)[0];
+
+    // Log cancellation email notification to the customer
+    const cancelNotification: Notification = {
+      id: 'notif-' + Math.random().toString(36).substr(2, 9),
+      title: `Order #${id} Cancelled/Refused`,
+      message: `Your order #${id} has been refused or removed from the system by an administrator.`,
+      type: 'order',
+      createdAt: new Date().toISOString(),
+      read: false
+    };
+
+    db.notifications.push(cancelNotification);
+
+    db.emailsSent.push({
+      id: 'email-' + Math.random().toString(36).substr(2, 9),
+      to: removedOrder.email,
+      subject: `Order Cancelled/Refused: #${id}`,
+      body: `Hello,\n\nWe regret to inform you that your order #${id} for the curated piece(s) has been cancelled or refused by the curation team.\n\nAny pre-authorizations or payments have been released/refunded.\n\nThank you for your understanding,\nEthos Editorial Care`,
+      timestamp: new Date().toISOString()
+    });
+
+    writeDb(db);
+
+    // Push live update to the client so the client updates
+    broadcast('ORDER_STATUS_CHANGED', {
+      orderId: id,
+      status: 'refused',
+      email: removedOrder.email,
+      notification: cancelNotification
+    });
+
+    res.json({ message: 'Order successfully deleted/refused', id });
+  });
+
   // Support / Contact Form
   app.post('/api/contact', (req, res) => {
     const { name, email, subject, message } = req.body;

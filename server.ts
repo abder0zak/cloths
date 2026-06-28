@@ -284,6 +284,80 @@ async function startServer() {
     res.json(newProduct);
   });
 
+  // API - Edit Product (Admin Only)
+  app.put('/api/products/:id', authenticateAdmin, (req, res) => {
+    const { id } = req.params;
+    const { name, collection, description, price, imageUrl, color, colorHex, sizes, isLimited } = req.body;
+    
+    const productIndex = PRODUCTS.findIndex(p => p.id === id);
+    if (productIndex === -1) {
+      return res.status(404).json({ error: 'Product not found' });
+    }
+
+    if (!name || !collection || !description || !price || !imageUrl || !color || !colorHex) {
+      return res.status(400).json({ error: 'All fields are required' });
+    }
+
+    const priceNum = parseFloat(price);
+    if (isNaN(priceNum)) {
+      return res.status(400).json({ error: 'Price must be a valid number' });
+    }
+
+    let parsedSizes: string[] = [];
+    if (Array.isArray(sizes)) {
+      parsedSizes = sizes;
+    } else if (typeof sizes === 'string') {
+      parsedSizes = sizes.split(',').map((s: string) => s.trim()).filter(Boolean);
+    }
+
+    if (parsedSizes.length === 0) {
+      parsedSizes = ['S', 'M', 'L'];
+    }
+
+    const updatedProduct = {
+      ...PRODUCTS[productIndex],
+      name,
+      collection,
+      description,
+      price: priceNum,
+      imageUrl,
+      color,
+      colorHex,
+      sizes: parsedSizes,
+      isLimited: !!isLimited
+    };
+
+    PRODUCTS[productIndex] = updatedProduct;
+
+    // Broadcast a live event feed message
+    broadcast('EVENT_FEED', {
+      message: `PIECE UPDATED: The product "${name}" was updated in the catalog.`,
+      timestamp: new Date().toLocaleTimeString()
+    });
+
+    res.json(updatedProduct);
+  });
+
+  // API - Delete Product (Admin Only)
+  app.delete('/api/products/:id', authenticateAdmin, (req, res) => {
+    const { id } = req.params;
+    const productIndex = PRODUCTS.findIndex(p => p.id === id);
+    if (productIndex === -1) {
+      return res.status(404).json({ error: 'Product not found' });
+    }
+
+    const deletedProduct = PRODUCTS[productIndex];
+    PRODUCTS.splice(productIndex, 1);
+
+    // Broadcast a live event feed message
+    broadcast('EVENT_FEED', {
+      message: `PIECE DELETED: The product "${deletedProduct.name}" was removed from the catalog.`,
+      timestamp: new Date().toLocaleTimeString()
+    });
+
+    res.json({ success: true, message: 'Product deleted successfully' });
+  });
+
   // JWT - Register
   app.post('/api/auth/register', (req, res) => {
     const { name, email, password } = req.body;
@@ -589,7 +663,7 @@ async function startServer() {
 
   // Admin - Update Order Status (Triggers live WebSocket push notification)
   app.post('/api/orders/:id/status', authenticateToken, (req: any, res) => {
-    const { status } = req.body;
+    const { status, estimatedTime, carrier, shippingAddress } = req.body;
     const { id } = req.params;
 
     if (req.user.role !== 'admin') {
@@ -602,12 +676,28 @@ async function startServer() {
       return res.status(404).json({ error: 'Order not found' });
     }
 
-    db.orders[orderIndex].status = status;
+    if (status) {
+      db.orders[orderIndex].status = status;
+    }
+    if (estimatedTime !== undefined) {
+      db.orders[orderIndex].estimatedTime = estimatedTime;
+    }
+    if (carrier !== undefined) {
+      db.orders[orderIndex].carrier = carrier;
+    }
+    if (shippingAddress !== undefined) {
+      db.orders[orderIndex].shippingAddress = shippingAddress;
+      db.orders[orderIndex].encryptedAddress = 'aes-256-cbc:' + Buffer.from(shippingAddress).toString('base64').substring(0, 24);
+    }
+
+    const finalStatus = db.orders[orderIndex].status;
+    const finalCarrier = db.orders[orderIndex].carrier || 'Standard Curation Care';
+    const finalETA = db.orders[orderIndex].estimatedTime || 'Pending Curation Selection';
 
     const statusNotification: Notification = {
       id: 'notif-' + Math.random().toString(36).substr(2, 9),
       title: `Order #${id} Updated`,
-      message: `Your order status has been updated to ${status.toUpperCase()}. Tracking: ${db.orders[orderIndex].trackingNumber}`,
+      message: `Your order status has been updated to ${finalStatus.toUpperCase()}. Carrier: ${finalCarrier}, ETA: ${finalETA}, Dest: ${db.orders[orderIndex].shippingAddress}`,
       type: 'order',
       createdAt: new Date().toISOString(),
       read: false
@@ -619,8 +709,8 @@ async function startServer() {
     db.emailsSent.push({
       id: 'email-' + Math.random().toString(36).substr(2, 9),
       to: db.orders[orderIndex].email,
-      subject: `Order Status Updated: ${status.toUpperCase()} - ${id}`,
-      body: `Hello,\n\nWe wanted to let you know that your order ${id} has been updated to: ${status.toUpperCase()}.\n\nTracking link: /dashboard\nThank you for shopping with Ethos Editorial.`,
+      subject: `Order Status Updated: ${finalStatus.toUpperCase()} - ${id}`,
+      body: `Hello,\n\nWe wanted to let you know that your order ${id} has been updated to: ${finalStatus.toUpperCase()}.\n\nCarrier: ${finalCarrier}\nEstimated Time: ${finalETA}\nDelivery Location: ${db.orders[orderIndex].shippingAddress}\n\nTracking link: /dashboard\nThank you for shopping with Ethos Editorial.`,
       timestamp: new Date().toISOString()
     });
 
@@ -629,7 +719,10 @@ async function startServer() {
     // Push update directly to the client over socket
     broadcast('ORDER_STATUS_CHANGED', {
       orderId: id,
-      status,
+      status: finalStatus,
+      estimatedTime: finalETA,
+      carrier: finalCarrier,
+      shippingAddress: db.orders[orderIndex].shippingAddress,
       email: db.orders[orderIndex].email,
       notification: statusNotification
     });

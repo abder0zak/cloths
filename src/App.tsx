@@ -547,6 +547,7 @@ export default function App() {
                 notifications={notifications}
                 onMarkNotificationRead={handleMarkNotificationRead}
                 onRefreshProducts={fetchProducts}
+                products={products}
               />
             </motion.div>
           )}

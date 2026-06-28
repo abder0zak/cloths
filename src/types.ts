@@ -31,6 +31,8 @@ export interface Order {
   createdAt: string;
   email: string;
   trackingNumber: string;
+  estimatedTime?: string;
+  carrier?: string;
 }
 
 export interface User {

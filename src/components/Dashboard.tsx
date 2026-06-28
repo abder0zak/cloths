@@ -1,9 +1,9 @@
 import React, { useState, useEffect } from 'react';
-import { User, Order, Notification, DashboardStats } from '../types';
+import { User, Order, Notification, DashboardStats, Product } from '../types';
 import { jsPDF } from 'jspdf';
 import { 
   Download, RefreshCw, ShoppingCart, ShieldAlert, CheckCircle, 
-  Truck, HelpCircle, Eye, EyeOff, Terminal, Mail, TrendingUp, Sparkles, Activity
+  Truck, HelpCircle, Eye, EyeOff, Terminal, Mail, TrendingUp, Sparkles, Activity, Edit, Trash
 } from 'lucide-react';
 
 interface DashboardProps {
@@ -13,6 +13,7 @@ interface DashboardProps {
   notifications: Notification[];
   onMarkNotificationRead: (id: string) => void;
   onRefreshProducts?: () => void;
+  products?: Product[];
 }
 
 interface AuditLog {
@@ -38,6 +39,7 @@ export default function Dashboard({
   notifications,
   onMarkNotificationRead,
   onRefreshProducts,
+  products = [],
 }: DashboardProps) {
   const [orders, setOrders] = useState<Order[]>([]);
   const [loading, setLoading] = useState(false);
@@ -48,6 +50,12 @@ export default function Dashboard({
   const [simulatedEmails, setSimulatedEmails] = useState<SimulatedEmail[]>([]);
   const [allUsers, setAllUsers] = useState<User[]>([]);
   const [statusUpdating, setStatusUpdating] = useState<string | null>(null);
+
+  // Logistics tracking and Algiers update state
+  const [shippingUpdates, setShippingUpdates] = useState<Record<string, { carrier: string; estimatedTime: string; shippingAddress: string }>>({});
+
+  // Product edit states
+  const [editingProductId, setEditingProductId] = useState<string | null>(null);
 
   // Add product form states
   const [prodName, setProdName] = useState('');
@@ -63,6 +71,142 @@ export default function Dashboard({
   const [prodError, setProdError] = useState<string | null>(null);
   const [prodSuccess, setProdSuccess] = useState<string | null>(null);
 
+  const getShippingValue = (orderId: string, field: 'carrier' | 'estimatedTime' | 'shippingAddress', defaultValue: string) => {
+    if (shippingUpdates[orderId] && shippingUpdates[orderId][field] !== undefined) {
+      return shippingUpdates[orderId][field];
+    }
+    return defaultValue || '';
+  };
+
+  const handleUpdateShippingField = (orderId: string, field: 'carrier' | 'estimatedTime' | 'shippingAddress', value: string) => {
+    setShippingUpdates(prev => {
+      const current = prev[orderId] || { carrier: '', estimatedTime: '', shippingAddress: '' };
+      const order = orders.find(o => o.id === orderId);
+      const fallbackCarrier = order?.carrier || '';
+      const fallbackETA = order?.estimatedTime || '';
+      const fallbackAddress = order?.shippingAddress || '';
+
+      return {
+        ...prev,
+        [orderId]: {
+          carrier: field === 'carrier' ? value : (current.carrier || fallbackCarrier),
+          estimatedTime: field === 'estimatedTime' ? value : (current.estimatedTime || fallbackETA),
+          shippingAddress: field === 'shippingAddress' ? value : (current.shippingAddress || fallbackAddress)
+        }
+      };
+    });
+  };
+
+  const handleSaveLogistics = async (orderId: string) => {
+    setStatusUpdating(orderId);
+    const updates = shippingUpdates[orderId] || {};
+    const order = orders.find(o => o.id === orderId);
+    
+    const carrier = updates.carrier !== undefined ? updates.carrier : (order?.carrier || '');
+    const estimatedTime = updates.estimatedTime !== undefined ? updates.estimatedTime : (order?.estimatedTime || '');
+    const shippingAddress = updates.shippingAddress !== undefined ? updates.shippingAddress : (order?.shippingAddress || '');
+
+    try {
+      const token = localStorage.getItem('ethos_session_token');
+      const res = await fetch(`/api/orders/${orderId}/status`, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          'Authorization': `Bearer ${token}`
+        },
+        body: JSON.stringify({
+          carrier,
+          estimatedTime,
+          shippingAddress
+        })
+      });
+
+      if (res.ok) {
+        // Refresh orders
+        const updatedOrdersRes = await fetch('/api/orders', {
+          headers: { 'Authorization': `Bearer ${token}` }
+        });
+        if (updatedOrdersRes.ok) {
+          const data = await updatedOrdersRes.json();
+          setOrders(data);
+        }
+        setProdSuccess(`Logistics info for Order #${orderId} has been successfully updated.`);
+        setTimeout(() => setProdSuccess(null), 4000);
+      } else {
+        const errData = await res.json();
+        setProdError(errData.error || 'Failed to update logistics.');
+        setTimeout(() => setProdError(null), 4000);
+      }
+    } catch (err) {
+      console.error(err);
+      setProdError('Network error updating logistics.');
+      setTimeout(() => setProdError(null), 4000);
+    } finally {
+      setStatusUpdating(null);
+    }
+  };
+
+  const handleStartEditProduct = (product: Product) => {
+    setEditingProductId(product.id);
+    setProdName(product.name);
+    setProdCollection(product.collection);
+    setProdDescription(product.description);
+    setProdPrice(product.price.toString());
+    setProdImageUrl(product.imageUrl);
+    setProdColor(product.color);
+    setProdColorHex(product.colorHex);
+    setProdSizes(product.sizes);
+    setProdIsLimited(product.isLimited);
+    
+    const element = document.getElementById('introduce-product-form');
+    if (element) {
+      element.scrollIntoView({ behavior: 'smooth' });
+    }
+  };
+
+  const handleCancelEditProduct = () => {
+    setEditingProductId(null);
+    setProdName('');
+    setProdCollection('Curated');
+    setProdDescription('');
+    setProdPrice('');
+    setProdImageUrl('');
+    setProdColor('');
+    setProdColorHex('#6366f1');
+    setProdSizes(['S', 'M', 'L']);
+    setProdIsLimited(false);
+    setProdError(null);
+    setProdSuccess(null);
+  };
+
+  const handleDeleteProduct = async (id: string) => {
+    if (!window.confirm('Are you sure you want to delete this piece from the catalog?')) {
+      return;
+    }
+    try {
+      const token = localStorage.getItem('ethos_session_token');
+      const res = await fetch(`/api/products/${id}`, {
+        method: 'DELETE',
+        headers: {
+          'Authorization': `Bearer ${token}`
+        }
+      });
+      if (res.ok) {
+        setProdSuccess('Product deleted successfully.');
+        setTimeout(() => setProdSuccess(null), 4000);
+        if (onRefreshProducts) onRefreshProducts();
+      } else {
+        const data = await res.json();
+        setProdError(data.error || 'Failed to delete product.');
+        setTimeout(() => setProdError(null), 4000);
+      }
+    } catch (err) {
+      console.error(err);
+      setProdError('Failed to delete product.');
+      setTimeout(() => setProdError(null), 4000);
+    }
+  };
+
   const handleAddProductSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!prodName || !prodCollection || !prodDescription || !prodPrice || !prodColor || !prodColorHex) {
@@ -76,8 +220,11 @@ export default function Dashboard({
 
     try {
       const token = localStorage.getItem('ethos_session_token');
-      const res = await fetch('/api/products', {
-        method: 'POST',
+      const url = editingProductId ? `/api/products/${editingProductId}` : '/api/products';
+      const method = editingProductId ? 'PUT' : 'POST';
+
+      const res = await fetch(url, {
+        method: method,
         headers: {
           'Content-Type': 'application/json',
           'Authorization': `Bearer ${token}`
@@ -96,7 +243,12 @@ export default function Dashboard({
       });
 
       if (res.ok) {
-        setProdSuccess(`Product "${prodName}" added successfully to the catalog.`);
+        if (editingProductId) {
+          setProdSuccess(`Product "${prodName}" updated successfully in the catalog.`);
+          setEditingProductId(null);
+        } else {
+          setProdSuccess(`Product "${prodName}" added successfully to the catalog.`);
+        }
         // Reset form
         setProdName('');
         setProdDescription('');
@@ -112,7 +264,7 @@ export default function Dashboard({
         }
       } else {
         const errData = await res.json();
-        setProdError(errData.error || 'Failed to introduce new piece to catalog.');
+        setProdError(errData.error || 'Failed to process product in catalog.');
       }
     } catch (err) {
       console.error(err);
@@ -377,7 +529,7 @@ export default function Dashboard({
                 </div>
                 <div className="text-left sm:text-right flex-shrink-0">
                   <p className="text-3xl font-black text-slate-900 dark:text-slate-100 italic uppercase">
-                    {orders[0].status === 'delivered' ? 'ARRIVED' : 'ETA 14:32'}
+                    {orders[0].status === 'delivered' ? 'ARRIVED' : (orders[0].estimatedTime || 'PENDING')}
                   </p>
                   <p className="text-[10px] uppercase tracking-wider text-slate-400 font-bold">Estimated arrival time</p>
                 </div>
@@ -387,11 +539,11 @@ export default function Dashboard({
               <div className="grid grid-cols-1 sm:grid-cols-3 gap-4 mt-2">
                 <div className="p-4 bg-slate-50 dark:bg-slate-950/50 rounded-2xl border border-slate-150 dark:border-slate-800/50">
                   <p className="text-[10px] uppercase text-slate-400 font-bold mb-0.5">Location</p>
-                  <p className="text-xs font-bold text-slate-800 dark:text-slate-200">Port of Rotterdam, NL</p>
+                  <p className="text-xs font-bold text-slate-800 dark:text-slate-200">{orders[0].shippingAddress || 'Under Curation'}</p>
                 </div>
                 <div className="p-4 bg-slate-50 dark:bg-slate-950/50 rounded-2xl border border-slate-150 dark:border-slate-800/50">
                   <p className="text-[10px] uppercase text-slate-400 font-bold mb-0.5">Carrier</p>
-                  <p className="text-xs font-bold text-slate-800 dark:text-slate-200 underline decoration-indigo-400">Global Express</p>
+                  <p className="text-xs font-bold text-slate-800 dark:text-slate-200 underline decoration-indigo-400">{orders[0].carrier || 'Standard Curation care'}</p>
                 </div>
                 <div className="p-4 bg-indigo-500/10 border border-indigo-500/20 rounded-2xl">
                   <p className="text-[10px] uppercase text-indigo-600 dark:text-indigo-400 font-bold mb-0.5">Current Status</p>
@@ -411,48 +563,52 @@ export default function Dashboard({
         </div>
 
         {/* 2. Security Layer Card (Spans 4 columns, 2 rows) */}
-        <div className="col-span-12 md:col-span-6 lg:col-span-4 bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-3xl p-6 flex flex-col justify-between shadow-sm">
-          <div>
-            <div className="flex justify-between items-start mb-4">
-              <h3 className="text-xs font-bold uppercase tracking-widest text-slate-400">Security Layer</h3>
-              <ShieldAlert className="w-5 h-5 text-indigo-500" />
+        {user.role === 'admin' && (
+          <div className="col-span-12 md:col-span-6 lg:col-span-4 bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-3xl p-6 flex flex-col justify-between shadow-sm animate-fadeIn">
+            <div>
+              <div className="flex justify-between items-start mb-4">
+                <h3 className="text-xs font-bold uppercase tracking-widest text-slate-400">Security Layer</h3>
+                <ShieldAlert className="w-5 h-5 text-indigo-500" />
+              </div>
+              <div className="space-y-3.5">
+                <div className="flex justify-between items-center text-xs">
+                  <span className="text-slate-500 font-medium">JWT Session</span>
+                  <span className="text-emerald-500 font-mono font-bold tracking-wider flex items-center gap-1">
+                    <span className="w-1.5 h-1.5 rounded-full bg-emerald-500 animate-ping"></span> ACTIVE
+                  </span>
+                </div>
+                <div className="flex justify-between items-center text-xs">
+                  <span className="text-slate-500 font-medium">Authentication Tier</span>
+                  <span className="text-slate-700 dark:text-slate-300 font-semibold truncate max-w-[140px] uppercase font-mono">{user.role}</span>
+                </div>
+                <div className="flex justify-between items-center text-xs">
+                  <span className="text-slate-500 font-medium">Encryption Cipher</span>
+                  <span className="text-slate-700 dark:text-slate-300 font-mono text-[11px]">AES-256-CBC</span>
+                </div>
+              </div>
             </div>
-            <div className="space-y-3.5">
-              <div className="flex justify-between items-center text-xs">
-                <span className="text-slate-500 font-medium">JWT Session</span>
-                <span className="text-emerald-500 font-mono font-bold tracking-wider flex items-center gap-1">
-                  <span className="w-1.5 h-1.5 rounded-full bg-emerald-500 animate-ping"></span> ACTIVE
-                </span>
+            <div className="pt-4 border-t border-slate-100 dark:border-slate-800/80 mt-4">
+              <div className="h-1.5 w-full bg-slate-100 dark:bg-slate-800 rounded-full overflow-hidden">
+                <div className="h-full bg-slate-400 dark:bg-slate-500 w-1/3"></div>
               </div>
-              <div className="flex justify-between items-center text-xs">
-                <span className="text-slate-500 font-medium">Authentication Tier</span>
-                <span className="text-slate-700 dark:text-slate-300 font-semibold truncate max-w-[140px] uppercase font-mono">{user.role}</span>
-              </div>
-              <div className="flex justify-between items-center text-xs">
-                <span className="text-slate-500 font-medium">Encryption Cipher</span>
-                <span className="text-slate-700 dark:text-slate-300 font-mono text-[11px]">AES-256-CBC</span>
-              </div>
+              <p className="text-[9px] text-slate-400 mt-1.5 uppercase font-mono tracking-widest">Token Rotation: 1h 22m remaining</p>
             </div>
           </div>
-          <div className="pt-4 border-t border-slate-100 dark:border-slate-800/80 mt-4">
-            <div className="h-1.5 w-full bg-slate-100 dark:bg-slate-800 rounded-full overflow-hidden">
-              <div className="h-full bg-slate-400 dark:bg-slate-500 w-1/3"></div>
-            </div>
-            <p className="text-[9px] text-slate-400 mt-1.5 uppercase font-mono tracking-widest">Token Rotation: 1h 22m remaining</p>
-          </div>
-        </div>
+        )}
 
         {/* 3. Real-Time Telemetry & Rate Limiter Card (Spans 4 columns) */}
-        <div className="col-span-12 md:col-span-6 lg:col-span-4 bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-3xl p-5 flex items-center gap-5 shadow-sm">
-          <div className="w-14 h-14 rounded-full border-4 border-slate-100 dark:border-slate-800 border-t-indigo-500 dark:border-t-indigo-400 flex items-center justify-center animate-spin-slow flex-shrink-0">
-            <span className="text-xs font-extrabold text-slate-800 dark:text-slate-200">82%</span>
+        {user.role === 'admin' && (
+          <div className="col-span-12 md:col-span-6 lg:col-span-4 bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-3xl p-5 flex items-center gap-5 shadow-sm animate-fadeIn">
+            <div className="w-14 h-14 rounded-full border-4 border-slate-100 dark:border-slate-800 border-t-indigo-500 dark:border-t-indigo-400 flex items-center justify-center animate-spin-slow flex-shrink-0">
+              <span className="text-xs font-extrabold text-slate-800 dark:text-slate-200">82%</span>
+            </div>
+            <div>
+              <p className="text-[9px] uppercase text-indigo-600 dark:text-indigo-400 font-extrabold tracking-widest mb-0.5">Gateway Load</p>
+              <p className="text-sm font-extrabold text-slate-800 dark:text-slate-200">API Rate: {stats.activeShoppers * 29}/500 req/s</p>
+              <p className="text-[10px] text-slate-400 mt-0.5">Redis cluster replication active</p>
+            </div>
           </div>
-          <div>
-            <p className="text-[9px] uppercase text-indigo-600 dark:text-indigo-400 font-extrabold tracking-widest mb-0.5">Gateway Load</p>
-            <p className="text-sm font-extrabold text-slate-800 dark:text-slate-200">API Rate: {stats.activeShoppers * 29}/500 req/s</p>
-            <p className="text-[10px] text-slate-400 mt-0.5">Redis cluster replication active</p>
-          </div>
-        </div>
+        )}
 
         {/* 4. Telemetry Multi-Grid Cards (Spans 4 columns) */}
         <div className="col-span-12 md:col-span-6 lg:col-span-4 bg-slate-50 dark:bg-slate-950/20 border border-slate-200/60 dark:border-slate-800/60 rounded-3xl p-6 grid grid-cols-2 gap-4 shadow-inner">
@@ -552,43 +708,45 @@ export default function Dashboard({
         </div>
 
         {/* 7. Decrypt / AES module card (Spans 4 columns) */}
-        <div className="col-span-12 md:col-span-6 lg:col-span-4 bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-3xl p-6 flex flex-col justify-between shadow-sm">
-          <div className="space-y-3.5">
-            <div className="flex justify-between items-center">
-              <span className="text-[10px] uppercase tracking-widest text-emerald-500 font-extrabold flex items-center gap-1">
-                <span className="w-1.5 h-1.5 rounded-full bg-emerald-500 animate-pulse"></span> Dynamic Decrypter
-              </span>
-              <span className="text-[10px] font-mono text-slate-400 uppercase">AES-256-CBC</span>
-            </div>
-            <p className="text-xs text-slate-500 leading-relaxed">
-              Select an order in your dashboard to dynamically translate cryptographically sealed destinations into plain text.
-            </p>
-            
-            {orders.length > 0 ? (
-              <div className="p-3.5 bg-slate-50 dark:bg-slate-950/50 rounded-2xl border border-slate-150 dark:border-slate-800/50 relative overflow-hidden">
-                <div className="flex justify-between items-center mb-1.5">
-                  <span className="text-[9px] text-slate-400 font-mono">ORDER #{orders[0].id} HEX</span>
-                  <button
-                    onClick={() => toggleAddressReveal(orders[0].id)}
-                    className="text-[10px] text-indigo-600 dark:text-indigo-400 font-bold hover:underline flex items-center gap-1"
-                  >
-                    {revealedAddresses[orders[0].id] ? <EyeOff size={11} /> : <Eye size={11} />}
-                    {revealedAddresses[orders[0].id] ? 'Mask Cipher' : 'Decrypt'}
-                  </button>
+        {user.role === 'admin' && (
+          <div className="col-span-12 md:col-span-6 lg:col-span-4 bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-3xl p-6 flex flex-col justify-between shadow-sm animate-fadeIn">
+            <div className="space-y-3.5">
+              <div className="flex justify-between items-center">
+                <span className="text-[10px] uppercase tracking-widest text-emerald-500 font-extrabold flex items-center gap-1">
+                  <span className="w-1.5 h-1.5 rounded-full bg-emerald-500 animate-pulse"></span> Dynamic Decrypter
+                </span>
+                <span className="text-[10px] font-mono text-slate-400 uppercase">AES-256-CBC</span>
+              </div>
+              <p className="text-xs text-slate-500 leading-relaxed">
+                Select an order in your dashboard to dynamically translate cryptographically sealed destinations into plain text.
+              </p>
+              
+              {orders.length > 0 ? (
+                <div className="p-3.5 bg-slate-50 dark:bg-slate-950/50 rounded-2xl border border-slate-150 dark:border-slate-800/50 relative overflow-hidden">
+                  <div className="flex justify-between items-center mb-1.5">
+                    <span className="text-[9px] text-slate-400 font-mono">ORDER #{orders[0].id} HEX</span>
+                    <button
+                      onClick={() => toggleAddressReveal(orders[0].id)}
+                      className="text-[10px] text-indigo-600 dark:text-indigo-400 font-bold hover:underline flex items-center gap-1"
+                    >
+                      {revealedAddresses[orders[0].id] ? <EyeOff size={11} /> : <Eye size={11} />}
+                      {revealedAddresses[orders[0].id] ? 'Mask Cipher' : 'Decrypt'}
+                    </button>
+                  </div>
+                  {revealedAddresses[orders[0].id] ? (
+                    <p className="text-xs font-bold text-slate-800 dark:text-slate-100 animate-fadeIn">{orders[0].shippingAddress}</p>
+                  ) : (
+                    <p className="text-[10px] font-mono text-slate-400 truncate select-all">{orders[0].encryptedAddress || 'aes-256-cbc:cf12b3a98...'}</p>
+                  )}
                 </div>
-                {revealedAddresses[orders[0].id] ? (
-                  <p className="text-xs font-bold text-slate-800 dark:text-slate-100 animate-fadeIn">{orders[0].shippingAddress}</p>
-                ) : (
-                  <p className="text-[10px] font-mono text-slate-400 truncate select-all">{orders[0].encryptedAddress || 'aes-256-cbc:cf12b3a98...'}</p>
-                )}
-              </div>
-            ) : (
-              <div className="text-center py-5 border border-dashed border-slate-200 dark:border-slate-800 rounded-2xl text-slate-400 text-xs">
-                Awaiting order placement
-              </div>
-            )}
+              ) : (
+                <div className="text-center py-5 border border-dashed border-slate-200 dark:border-slate-800 rounded-2xl text-slate-400 text-xs">
+                  Awaiting order placement
+                </div>
+              )}
+            </div>
           </div>
-        </div>
+        )}
 
         {/* 8. WebSockets Terminal Feed & Alerts Card (Spans 8 columns) */}
         <div className="col-span-12 lg:col-span-8 bg-black text-emerald-400 rounded-3xl p-6 flex flex-col justify-between shadow-2xl relative border border-slate-900 min-h-[300px]">
@@ -621,35 +779,37 @@ export default function Dashboard({
         </div>
 
         {/* 9. Realtime Push Messages Card (Spans 4 columns) */}
-        <div className="col-span-12 lg:col-span-4 bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-3xl p-6 flex flex-col justify-between shadow-sm">
-          <div>
-            <h3 className="text-xs font-bold uppercase tracking-widest text-slate-400 mb-4">Realtime Push Messages</h3>
-            
-            {notifications.length === 0 ? (
-              <p className="text-xs text-slate-400 py-8 text-center italic">No security alerts or tracking flags active.</p>
-            ) : (
-              <div className="space-y-3 max-h-64 overflow-y-auto pr-1">
-                {notifications.map((n) => (
-                  <div key={n.id} className={`p-3 border text-xs rounded-2xl relative ${n.read ? 'border-slate-200 opacity-60' : 'border-indigo-500/30 bg-indigo-500/5'}`}>
-                    <div className="flex justify-between items-start gap-1">
-                      <p className="font-extrabold text-slate-900 dark:text-slate-100">{n.title}</p>
-                      {!n.read && (
-                        <button 
-                          onClick={() => onMarkNotificationRead(n.id)}
-                          className="text-[10px] text-indigo-600 dark:text-indigo-400 font-extrabold hover:underline flex-shrink-0"
-                        >
-                          Acknowledge
-                        </button>
-                      )}
+        {user.role === 'admin' && (
+          <div className="col-span-12 lg:col-span-4 bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-3xl p-6 flex flex-col justify-between shadow-sm animate-fadeIn">
+            <div>
+              <h3 className="text-xs font-bold uppercase tracking-widest text-slate-400 mb-4">Realtime Push Messages</h3>
+              
+              {notifications.length === 0 ? (
+                <p className="text-xs text-slate-400 py-8 text-center italic">No security alerts or tracking flags active.</p>
+              ) : (
+                <div className="space-y-3 max-h-64 overflow-y-auto pr-1">
+                  {notifications.map((n) => (
+                    <div key={n.id} className={`p-3 border text-xs rounded-2xl relative ${n.read ? 'border-slate-200 opacity-60' : 'border-indigo-500/30 bg-indigo-500/5'}`}>
+                      <div className="flex justify-between items-start gap-1">
+                        <p className="font-extrabold text-slate-900 dark:text-slate-100">{n.title}</p>
+                        {!n.read && (
+                          <button 
+                            onClick={() => onMarkNotificationRead(n.id)}
+                            className="text-[10px] text-indigo-600 dark:text-indigo-400 font-extrabold hover:underline flex-shrink-0"
+                          >
+                            Acknowledge
+                          </button>
+                        )}
+                      </div>
+                      <p className="text-slate-600 dark:text-slate-400 mt-1">{n.message}</p>
+                      <span className="text-[9px] text-slate-400 block mt-1.5 font-mono">{new Date(n.createdAt).toLocaleTimeString()}</span>
                     </div>
-                    <p className="text-slate-600 dark:text-slate-400 mt-1">{n.message}</p>
-                    <span className="text-[9px] text-slate-400 block mt-1.5 font-mono">{new Date(n.createdAt).toLocaleTimeString()}</span>
-                  </div>
-                ))}
-              </div>
-            )}
+                  ))}
+                </div>
+              )}
+            </div>
           </div>
-        </div>
+        )}
 
       </div>
 
@@ -669,40 +829,54 @@ export default function Dashboard({
           <div className="grid grid-cols-1 xl:grid-cols-12 gap-6">
 
             {/* 1. Introduce New Product Piece (Spans 12 columns for premium look) */}
-            <div className="xl:col-span-12 bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-3xl p-6 md:p-8 shadow-sm flex flex-col justify-between">
+            <div id="introduce-product-form" className="xl:col-span-12 bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-3xl p-6 md:p-8 shadow-sm flex flex-col justify-between">
               <div>
                 <div className="flex flex-col sm:flex-row justify-between items-start sm:items-center border-b border-slate-100 dark:border-slate-800/80 pb-4 mb-6 gap-2">
                   <div>
-                    <h3 className="font-display text-xl font-extrabold text-slate-900 dark:text-slate-100 uppercase tracking-tight">Introduce New Curated Piece</h3>
-                    <p className="text-xs text-slate-400 mt-1">Populate the catalog matrix with custom high-end curated apparel or accessory pieces.</p>
+                    <h3 className="font-display text-xl font-extrabold text-slate-900 dark:text-slate-100 uppercase tracking-tight">
+                      {editingProductId ? `Edit Curated Piece: ${prodName}` : 'Introduce New Curated Piece'}
+                    </h3>
+                    <p className="text-xs text-slate-400 mt-1">
+                      {editingProductId ? 'Modify existing catalog parameters, pricing matrix, or limited collection scarcity.' : 'Populate the catalog matrix with custom high-end curated apparel or accessory pieces.'}
+                    </p>
                   </div>
-                  <button
-                    type="button"
-                    onClick={() => {
-                      const sampleImages = [
-                        'https://images.unsplash.com/photo-1539109136881-3be0616acf4b?q=80&w=600&auto=format&fit=crop',
-                        'https://images.unsplash.com/photo-1485230895905-ec40ba36b9bc?q=80&w=600&auto=format&fit=crop',
-                        'https://images.unsplash.com/photo-1549298916-b41d501d3772?q=80&w=600&auto=format&fit=crop',
-                        'https://images.unsplash.com/photo-1595950653106-6c9ebd614d3a?q=80&w=600&auto=format&fit=crop',
-                        'https://images.unsplash.com/photo-1509319117193-57bab727e09d?q=80&w=600&auto=format&fit=crop'
-                      ];
-                      const chosenImg = sampleImages[Math.floor(Math.random() * sampleImages.length)];
-                      setProdName('Sartorial Linen Trenchcoat');
-                      setProdCollection('Curated');
-                      setProdDescription('An exquisitely tailored linen trench coat featuring relaxed double-breasted closure, structured notch lapels, and an elegant waist tie.');
-                      setProdPrice('450.00');
-                      setProdImageUrl(chosenImg);
-                      setProdColor('Desert Sand');
-                      setProdColorHex('#C2B280');
-                      setProdSizes(['S', 'M', 'L', 'XL']);
-                      setProdIsLimited(true);
-                      setProdSuccess('Autofilled form with sample fashion piece!');
-                      setTimeout(() => setProdSuccess(null), 3000);
-                    }}
-                    className="text-xs bg-slate-50 dark:bg-slate-950/40 hover:bg-slate-100 dark:hover:bg-slate-800 text-slate-700 dark:text-slate-300 px-3.5 py-2 border border-slate-200 dark:border-slate-800 rounded-xl transition-all font-bold flex items-center gap-1.5"
-                  >
-                    <Sparkles size={14} className="text-indigo-500" /> Autofill Sample Piece
-                  </button>
+                  {!editingProductId ? (
+                    <button
+                      type="button"
+                      onClick={() => {
+                        const sampleImages = [
+                          'https://images.unsplash.com/photo-1539109136881-3be0616acf4b?q=80&w=600&auto=format&fit=crop',
+                          'https://images.unsplash.com/photo-1485230895905-ec40ba36b9bc?q=80&w=600&auto=format&fit=crop',
+                          'https://images.unsplash.com/photo-1549298916-b41d501d3772?q=80&w=600&auto=format&fit=crop',
+                          'https://images.unsplash.com/photo-1595950653106-6c9ebd614d3a?q=80&w=600&auto=format&fit=crop',
+                          'https://images.unsplash.com/photo-1509319117193-57bab727e09d?q=80&w=600&auto=format&fit=crop'
+                        ];
+                        const chosenImg = sampleImages[Math.floor(Math.random() * sampleImages.length)];
+                        setProdName('Sartorial Linen Trenchcoat');
+                        setProdCollection('Curated');
+                        setProdDescription('An exquisitely tailored linen trench coat featuring relaxed double-breasted closure, structured notch lapels, and an elegant waist tie.');
+                        setProdPrice('450.00');
+                        setProdImageUrl(chosenImg);
+                        setProdColor('Desert Sand');
+                        setProdColorHex('#C2B280');
+                        setProdSizes(['S', 'M', 'L', 'XL']);
+                        setProdIsLimited(true);
+                        setProdSuccess('Autofilled form with sample fashion piece!');
+                        setTimeout(() => setProdSuccess(null), 3000);
+                      }}
+                      className="text-xs bg-slate-50 dark:bg-slate-950/40 hover:bg-slate-100 dark:hover:bg-slate-800 text-slate-700 dark:text-slate-300 px-3.5 py-2 border border-slate-200 dark:border-slate-800 rounded-xl transition-all font-bold flex items-center gap-1.5"
+                    >
+                      <Sparkles size={14} className="text-indigo-500" /> Autofill Sample Piece
+                    </button>
+                  ) : (
+                    <button
+                      type="button"
+                      onClick={handleCancelEditProduct}
+                      className="text-xs bg-red-500/10 hover:bg-red-500/20 text-red-600 dark:text-red-400 px-4 py-2 border border-red-500/20 rounded-xl transition-all font-bold flex items-center gap-1.5"
+                    >
+                      Cancel Editing
+                    </button>
+                  )}
                 </div>
 
                 {prodSuccess && (
@@ -880,16 +1054,64 @@ export default function Dashboard({
                         {addingProduct ? (
                           <>
                             <RefreshCw size={13} className="animate-spin" />
-                            Introducing...
+                            {editingProductId ? 'Saving Changes...' : 'Introducing...'}
                           </>
                         ) : (
-                          'Introduce Piece'
+                          editingProductId ? 'Save Changes' : 'Introduce Piece'
                         )}
                       </button>
                     </div>
                   </div>
                 </form>
               </div>
+            </div>
+
+            {/* Active Catalog Management Section (Spans 12) */}
+            <div className="xl:col-span-12 bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-3xl p-6 shadow-sm">
+              <h3 className="font-display text-lg font-extrabold text-slate-900 dark:text-slate-100 uppercase tracking-tight mb-4 flex items-center gap-2">
+                Active Catalog Pieces <span className="text-xs bg-indigo-100 dark:bg-indigo-950/40 text-indigo-600 dark:text-indigo-400 font-extrabold px-2.5 py-1 rounded-full uppercase font-sans tracking-normal">{products.length} Items</span>
+              </h3>
+              
+              {products.length === 0 ? (
+                <p className="text-xs text-slate-400 py-8 text-center italic">No curated products available in the catalog.</p>
+              ) : (
+                <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-4 max-h-[420px] overflow-y-auto pr-1">
+                  {products.map((p) => (
+                    <div key={p.id} className="border border-slate-100 dark:border-slate-800/80 p-3.5 rounded-2xl bg-slate-50/50 dark:bg-slate-950/20 flex gap-3.5 items-center justify-between relative group">
+                      <div className="flex gap-3.5 items-center min-w-0 flex-1">
+                        <img 
+                          src={p.imageUrl} 
+                          alt={p.name} 
+                          className="w-14 h-14 rounded-xl object-cover border border-slate-200/60 dark:border-slate-800 flex-shrink-0"
+                          referrerPolicy="no-referrer"
+                        />
+                        <div className="min-w-0">
+                          <p className="font-bold text-slate-950 dark:text-slate-50 text-xs truncate">{p.name}</p>
+                          <p className="text-[10px] text-slate-400 uppercase font-bold tracking-tight mt-0.5">{p.collection}</p>
+                          <p className="text-[11px] font-mono font-bold text-indigo-600 dark:text-indigo-400 mt-1">${p.price.toFixed(2)}</p>
+                        </div>
+                      </div>
+                      
+                      <div className="flex gap-1 flex-shrink-0">
+                        <button
+                          onClick={() => handleStartEditProduct(p)}
+                          className="p-2 hover:bg-indigo-500/10 text-slate-500 hover:text-indigo-600 dark:text-slate-400 dark:hover:text-indigo-400 rounded-lg transition-all"
+                          title="Edit Product"
+                        >
+                          <Edit size={14} />
+                        </button>
+                        <button
+                          onClick={() => handleDeleteProduct(p.id)}
+                          className="p-2 hover:bg-red-500/10 text-slate-500 hover:text-red-600 dark:text-slate-400 dark:hover:text-red-400 rounded-lg transition-all"
+                          title="Delete Product"
+                        >
+                          <Trash size={14} />
+                        </button>
+                      </div>
+                    </div>
+                  ))}
+                </div>
+              )}
             </div>
 
             {/* Global Orders Admin & Status update panel (Spans 6) */}
@@ -900,9 +1122,9 @@ export default function Dashboard({
                 {orders.length === 0 ? (
                   <p className="text-xs text-slate-400 py-8 text-center">No transactions registered across the platform.</p>
                 ) : (
-                  <div className="space-y-3.5 max-h-[380px] overflow-y-auto pr-1">
+                  <div className="space-y-3.5 max-h-[480px] overflow-y-auto pr-1">
                     {orders.map((o) => (
-                      <div key={o.id} className="border border-slate-100 dark:border-slate-800/80 p-4 rounded-2xl bg-slate-50/50 dark:bg-slate-950/20 space-y-3 text-xs">
+                      <div key={o.id} className="border border-slate-100 dark:border-slate-800/80 p-4 rounded-2xl bg-slate-50/50 dark:bg-slate-950/20 space-y-3.5 text-xs">
                         <div className="flex justify-between items-start">
                           <div>
                             <p className="font-bold text-slate-900 dark:text-slate-100">Order #{o.id}</p>
@@ -929,6 +1151,62 @@ export default function Dashboard({
                                 {statusUpdating === o.id && o.status !== s ? '...' : s}
                               </button>
                             ))}
+                          </div>
+                        </div>
+
+                        {/* logistics carrier & ETA input section */}
+                        <div className="pt-3 border-t border-slate-100 dark:border-slate-800/60 space-y-2.5">
+                          <div className="grid grid-cols-2 gap-2">
+                            <div>
+                              <label className="text-[10px] text-slate-400 uppercase font-bold block mb-1">Carrier</label>
+                              <input
+                                type="text"
+                                placeholder="e.g. DHL, FedEx"
+                                value={getShippingValue(o.id, 'carrier', o.carrier || '')}
+                                onChange={(e) => handleUpdateShippingField(o.id, 'carrier', e.target.value)}
+                                className="w-full text-xs px-2.5 py-1.5 bg-white dark:bg-slate-800 border border-slate-250 dark:border-slate-700 rounded-xl focus:ring-0 focus:border-indigo-500"
+                              />
+                            </div>
+                            <div>
+                              <label className="text-[10px] text-slate-400 uppercase font-bold block mb-1">Estimated Time</label>
+                              <input
+                                type="text"
+                                placeholder="e.g. 2-3 business days"
+                                value={getShippingValue(o.id, 'estimatedTime', o.estimatedTime || '')}
+                                onChange={(e) => handleUpdateShippingField(o.id, 'estimatedTime', e.target.value)}
+                                className="w-full text-xs px-2.5 py-1.5 bg-white dark:bg-slate-800 border border-slate-250 dark:border-slate-700 rounded-xl focus:ring-0 focus:border-indigo-500"
+                              />
+                            </div>
+                          </div>
+
+                          <div>
+                            <div className="flex justify-between items-center mb-1">
+                              <label className="text-[10px] text-slate-400 uppercase font-bold">Delivery Location</label>
+                              <button
+                                type="button"
+                                onClick={() => handleUpdateShippingField(o.id, 'shippingAddress', 'Algiers, Algeria')}
+                                className="text-[10px] text-indigo-600 dark:text-indigo-400 font-extrabold hover:underline"
+                              >
+                                Change Location to Algeris
+                              </button>
+                            </div>
+                            <div className="flex gap-1.5">
+                              <input
+                                type="text"
+                                placeholder="Enter location..."
+                                value={getShippingValue(o.id, 'shippingAddress', o.shippingAddress || '')}
+                                onChange={(e) => handleUpdateShippingField(o.id, 'shippingAddress', e.target.value)}
+                                className="flex-1 text-xs px-2.5 py-1.5 bg-white dark:bg-slate-800 border border-slate-250 dark:border-slate-700 rounded-xl focus:ring-0 focus:border-indigo-500"
+                              />
+                              <button
+                                type="button"
+                                onClick={() => handleSaveLogistics(o.id)}
+                                disabled={statusUpdating === o.id}
+                                className="bg-indigo-600 hover:bg-indigo-500 text-white px-3 py-1.5 rounded-xl font-bold transition-all text-[11px]"
+                              >
+                                {statusUpdating === o.id ? '...' : 'Save'}
+                              </button>
+                            </div>
                           </div>
                         </div>
                       </div>

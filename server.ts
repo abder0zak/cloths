@@ -5,8 +5,8 @@ import jwt from 'jsonwebtoken';
 import http from 'http';
 import { WebSocketServer, WebSocket } from 'ws';
 import { createServer as createViteServer } from 'vite';
-import { readDb, writeDb, encryptText, decryptText } from './server/dbStore';
-import { rateLimiterMiddleware } from './server/rateLimiter';
+import { readDb, writeDb, encryptText, decryptText } from './server/dbStore.js';
+import { rateLimiterMiddleware } from './server/rateLimiter.js';
 import { User, Order, Product, Notification, CartItem } from './src/types';
 
 const PORT = 3000;

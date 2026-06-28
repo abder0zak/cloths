@@ -5,7 +5,7 @@ import jwt from 'jsonwebtoken';
 import http from 'http';
 import fs from 'fs';
 import { WebSocketServer, WebSocket } from 'ws';
-import { readDb, writeDb, encryptText, decryptText } from './server/dbStore.js';
+import { readDb, writeDb, encryptText, decryptText, querySecured, insertSecured, updateSecured, deleteSecured } from './server/dbStore.js';
 import { rateLimiterMiddleware } from './server/rateLimiter.js';
 import { User, Order, Product, Notification, CartItem } from './src/types';
 
@@ -578,86 +578,88 @@ async function startServer() {
     // Encrypt shipping address before database persistence
     const encryptedAddress = encryptText(shippingAddress);
 
-    const db = readDb();
-    const newOrder: Order = {
-      id: 'ethos-' + Math.floor(100000 + Math.random() * 900000),
-      items,
-      total,
-      status: 'pending',
-      shippingAddress: shippingAddress, // Plain text returnable within authorized context
-      encryptedAddress, // Real encrypted payload for validation demo
-      paymentMethod,
-      createdAt: new Date().toISOString(),
-      email: req.user.email,
-      trackingNumber: 'ETH-' + Math.random().toString(36).substr(2, 9).toUpperCase()
-    };
+    try {
+      const newOrder: Order = {
+        id: 'ethos-' + Math.floor(100000 + Math.random() * 900000),
+        items,
+        total,
+        status: 'pending',
+        shippingAddress: shippingAddress, // Plain text returnable within authorized context
+        encryptedAddress, // Real encrypted payload for validation demo
+        paymentMethod,
+        createdAt: new Date().toISOString(),
+        email: req.user.email,
+        trackingNumber: 'ETH-' + Math.random().toString(36).substr(2, 9).toUpperCase()
+      };
 
-    db.orders.push(newOrder);
+      // Enforce write validation via Row Level Security (RLS)
+      insertSecured('orders', newOrder, req.user, req.ip);
 
-    // Push automated email alert log
-    const simulatedEmailBody = `Dear ${req.user.email},\n\nThank you for placing order ${newOrder.id} with Ethos Editorial. We are currently processing your request.\n\nTracking Number: ${newOrder.trackingNumber}\nTotal: $${newOrder.total.toFixed(2)}\nDelivery address: ${shippingAddress}`;
-    db.emailsSent.push({
-      id: 'email-' + Math.random().toString(36).substr(2, 9),
-      to: req.user.email,
-      subject: `Order Confirmation - Ethos Editorial ${newOrder.id}`,
-      body: simulatedEmailBody,
-      timestamp: new Date().toISOString()
-    });
+      // Push automated email alert log through RLS
+      const simulatedEmailBody = `Dear ${req.user.email},\n\nThank you for placing order ${newOrder.id} with Ethos Editorial. We are currently processing your request.\n\nTracking Number: ${newOrder.trackingNumber}\nTotal: ${newOrder.total.toFixed(2)} DA\nDelivery address: ${shippingAddress}`;
+      insertSecured('emailsSent', {
+        id: 'email-' + Math.random().toString(36).substr(2, 9),
+        to: req.user.email,
+        subject: `Order Confirmation - Ethos Editorial ${newOrder.id}`,
+        body: simulatedEmailBody,
+        timestamp: new Date().toISOString()
+      }, req.user, req.ip);
 
-    // Write audit logs
-    db.logs.push({
-      id: 'log-' + Math.random().toString(36).substr(2, 9),
-      userId: req.user.id,
-      event: `Order ${newOrder.id} successfully created. Address securely encrypted in backend database.`,
-      ip: req.ip || '127.0.0.1',
-      timestamp: new Date().toISOString()
-    });
+      // Write secure audit logs with RLS
+      insertSecured('logs', {
+        id: 'log-' + Math.random().toString(36).substr(2, 9),
+        userId: req.user.id,
+        event: `Order ${newOrder.id} successfully created. Address securely encrypted in backend database. Row-Level Security (RLS) policies enforced.`,
+        ip: req.ip || '127.0.0.1',
+        timestamp: new Date().toISOString()
+      }, req.user, req.ip);
 
-    // Pushing real-time order status notification to notifications list
-    const orderNotification: Notification = {
-      id: 'notif-' + Math.random().toString(36).substr(2, 9),
-      title: 'Order Placed successfully',
-      message: `Your order ${newOrder.id} has been placed. Address: ${shippingAddress.substring(0, 15)}...`,
-      type: 'order',
-      createdAt: new Date().toISOString(),
-      read: false
-    };
-    db.notifications.push(orderNotification);
+      // Pushing real-time order status notification with RLS
+      const orderNotification: Notification = {
+        id: 'notif-' + Math.random().toString(36).substr(2, 9),
+        title: 'Order Placed successfully',
+        message: `Your order ${newOrder.id} has been placed. Address: ${shippingAddress.substring(0, 15)}...`,
+        type: 'order',
+        createdAt: new Date().toISOString(),
+        read: false
+      };
+      insertSecured('notifications', orderNotification, req.user, req.ip);
 
-    writeDb(db);
+      // Dynamic metrics increments
+      ordersProcessed += 1;
+      totalSalesToday += total;
 
-    // Dynamic metrics increments
-    ordersProcessed += 1;
-    totalSalesToday += total;
+      // Stream real-time events over WebSocket instantly to all clients
+      broadcast('ORDER_PLACED', {
+        orderId: newOrder.id,
+        total: newOrder.total,
+        itemsCount: items.length,
+        recentBuyer: req.user.email.split('@')[0]
+      });
 
-    // Stream real-time events over WebSocket instantly to all clients
-    broadcast('ORDER_PLACED', {
-      orderId: newOrder.id,
-      total: newOrder.total,
-      itemsCount: items.length,
-      recentBuyer: req.user.email.split('@')[0]
-    });
+      broadcast('NOTIFICATION_ADD', orderNotification);
 
-    broadcast('NOTIFICATION_ADD', orderNotification);
+      broadcast('STATS_UPDATE', {
+        activeShoppers: simulatedShoppers,
+        totalSalesToday,
+        ordersProcessed,
+        stockAlerts: 1
+      });
 
-    broadcast('STATS_UPDATE', {
-      activeShoppers: simulatedShoppers,
-      totalSalesToday,
-      ordersProcessed,
-      stockAlerts: 1
-    });
-
-    res.json({ order: newOrder, notification: orderNotification });
+      res.json({ order: newOrder, notification: orderNotification });
+    } catch (err: any) {
+      console.error('Secure Order placement failed:', err);
+      res.status(403).json({ error: err.message || 'Row-Level Security transaction failed.' });
+    }
   });
 
   // Get User Orders
   app.get('/api/orders', authenticateToken, (req: any, res) => {
-    const db = readDb();
-    if (req.user.role === 'admin') {
-      res.json(db.orders);
-    } else {
-      const userOrders = db.orders.filter(o => o.email.toLowerCase() === req.user.email.toLowerCase());
-      res.json(userOrders);
+    try {
+      const securedOrders = querySecured('orders', req.user);
+      res.json(securedOrders);
+    } catch (err: any) {
+      res.status(403).json({ error: err.message });
     }
   });
 
@@ -666,117 +668,124 @@ async function startServer() {
     const { status, estimatedTime, carrier, shippingAddress } = req.body;
     const { id } = req.params;
 
-    if (req.user.role !== 'admin') {
-      return res.status(403).json({ error: 'Administrative privileges required' });
-    }
-
-    const db = readDb();
-    const orderIndex = db.orders.findIndex(o => o.id === id);
-    if (orderIndex === -1) {
-      return res.status(404).json({ error: 'Order not found' });
-    }
-
+    const updates: any = {};
     if (status) {
-      db.orders[orderIndex].status = status;
+      updates.status = status;
     }
     if (estimatedTime !== undefined) {
-      db.orders[orderIndex].estimatedTime = estimatedTime;
+      updates.estimatedTime = estimatedTime;
     }
     if (carrier !== undefined) {
-      db.orders[orderIndex].carrier = carrier;
+      updates.carrier = carrier;
     }
     if (shippingAddress !== undefined) {
-      db.orders[orderIndex].shippingAddress = shippingAddress;
-      db.orders[orderIndex].encryptedAddress = 'aes-256-cbc:' + Buffer.from(shippingAddress).toString('base64').substring(0, 24);
+      updates.shippingAddress = shippingAddress;
+      updates.encryptedAddress = 'aes-256-cbc:' + Buffer.from(shippingAddress).toString('base64').substring(0, 24);
     }
 
-    const finalStatus = db.orders[orderIndex].status;
-    const finalCarrier = db.orders[orderIndex].carrier || 'Standard Curation Care';
-    const finalETA = db.orders[orderIndex].estimatedTime || 'Pending Curation Selection';
+    try {
+      const db = readDb();
+      const existingOrder = db.orders.find(o => o.id === id);
+      if (!existingOrder) {
+        return res.status(404).json({ error: 'Order not found' });
+      }
 
-    const statusNotification: Notification = {
-      id: 'notif-' + Math.random().toString(36).substr(2, 9),
-      title: `Order #${id} Updated`,
-      message: `Your order status has been updated to ${finalStatus.toUpperCase()}. Carrier: ${finalCarrier}, ETA: ${finalETA}, Dest: ${db.orders[orderIndex].shippingAddress}`,
-      type: 'order',
-      createdAt: new Date().toISOString(),
-      read: false
-    };
+      // Enforce Row Level Security update validation
+      updateSecured('orders', id, updates, req.user, req.ip);
 
-    db.notifications.push(statusNotification);
+      // Fetch the updated state
+      const refreshedDb = readDb();
+      const updatedOrder = refreshedDb.orders.find(o => o.id === id)!;
 
-    // Simulated Shipping Alert email
-    db.emailsSent.push({
-      id: 'email-' + Math.random().toString(36).substr(2, 9),
-      to: db.orders[orderIndex].email,
-      subject: `Order Status Updated: ${finalStatus.toUpperCase()} - ${id}`,
-      body: `Hello,\n\nWe wanted to let you know that your order ${id} has been updated to: ${finalStatus.toUpperCase()}.\n\nCarrier: ${finalCarrier}\nEstimated Time: ${finalETA}\nDelivery Location: ${db.orders[orderIndex].shippingAddress}\n\nTracking link: /dashboard\nThank you for shopping with Ethos Editorial.`,
-      timestamp: new Date().toISOString()
-    });
+      const finalStatus = updatedOrder.status;
+      const finalCarrier = updatedOrder.carrier || 'Standard Curation Care';
+      const finalETA = updatedOrder.estimatedTime || 'Pending Curation Selection';
 
-    writeDb(db);
+      const statusNotification: Notification = {
+        id: 'notif-' + Math.random().toString(36).substr(2, 9),
+        title: `Order #${id} Updated`,
+        message: `Your order status has been updated to ${finalStatus.toUpperCase()}. Carrier: ${finalCarrier}, ETA: ${finalETA}, Dest: ${updatedOrder.shippingAddress}`,
+        type: 'order',
+        createdAt: new Date().toISOString(),
+        read: false
+      };
 
-    // Push update directly to the client over socket
-    broadcast('ORDER_STATUS_CHANGED', {
-      orderId: id,
-      status: finalStatus,
-      estimatedTime: finalETA,
-      carrier: finalCarrier,
-      shippingAddress: db.orders[orderIndex].shippingAddress,
-      email: db.orders[orderIndex].email,
-      notification: statusNotification
-    });
+      insertSecured('notifications', statusNotification, req.user, req.ip);
 
-    res.json({ order: db.orders[orderIndex], notification: statusNotification });
+      // Simulated Shipping Alert email
+      insertSecured('emailsSent', {
+        id: 'email-' + Math.random().toString(36).substr(2, 9),
+        to: updatedOrder.email,
+        subject: `Order Status Updated: ${finalStatus.toUpperCase()} - ${id}`,
+        body: `Hello,\n\nWe wanted to let you know that your order ${id} has been updated to: ${finalStatus.toUpperCase()}.\n\nCarrier: ${finalCarrier}\nEstimated Time: ${finalETA}\nDelivery Location: ${updatedOrder.shippingAddress}\n\nTracking link: /dashboard\nThank you for shopping with Ethos Editorial.`,
+        timestamp: new Date().toISOString()
+      }, req.user, req.ip);
+
+      // Push update directly to the client over socket
+      broadcast('ORDER_STATUS_CHANGED', {
+        orderId: id,
+        status: finalStatus,
+        estimatedTime: finalETA,
+        carrier: finalCarrier,
+        shippingAddress: updatedOrder.shippingAddress,
+        email: updatedOrder.email,
+        notification: statusNotification
+      });
+
+      res.json({ order: updatedOrder, notification: statusNotification });
+    } catch (err: any) {
+      console.error('Secure Order status update failed:', err);
+      res.status(403).json({ error: err.message || 'Row-Level Security transaction failed.' });
+    }
   });
 
   // Admin - Delete / Refuse Order
   app.delete('/api/orders/:id', authenticateToken, (req: any, res) => {
     const { id } = req.params;
 
-    if (req.user.role !== 'admin') {
-      return res.status(403).json({ error: 'Administrative privileges required' });
+    try {
+      const db = readDb();
+      const removedOrder = db.orders.find(o => o.id === id);
+      if (!removedOrder) {
+        return res.status(404).json({ error: 'Order not found' });
+      }
+
+      // Enforce Row Level Security delete validation
+      deleteSecured('orders', id, req.user, req.ip);
+
+      // Log cancellation email notification to the customer
+      const cancelNotification: Notification = {
+        id: 'notif-' + Math.random().toString(36).substr(2, 9),
+        title: `Order #${id} Cancelled/Refused`,
+        message: `Your order #${id} has been refused or removed from the system by an administrator.`,
+        type: 'order',
+        createdAt: new Date().toISOString(),
+        read: false
+      };
+
+      insertSecured('notifications', cancelNotification, req.user, req.ip);
+
+      insertSecured('emailsSent', {
+        id: 'email-' + Math.random().toString(36).substr(2, 9),
+        to: removedOrder.email,
+        subject: `Order Cancelled/Refused: #${id}`,
+        body: `Hello,\n\nWe regret to inform you that your order #${id} for the curated piece(s) has been cancelled or refused by the curation team.\n\nAny pre-authorizations or payments have been released/refunded.\n\nThank you for your understanding,\nEthos Editorial Care`,
+        timestamp: new Date().toISOString()
+      }, req.user, req.ip);
+
+      // Push live update to the client so the client updates
+      broadcast('ORDER_STATUS_CHANGED', {
+        orderId: id,
+        status: 'refused',
+        email: removedOrder.email,
+        notification: cancelNotification
+      });
+
+      res.json({ message: 'Order successfully deleted/refused', id });
+    } catch (err: any) {
+      console.error('Secure Order deletion failed:', err);
+      res.status(403).json({ error: err.message || 'Row-Level Security transaction failed.' });
     }
-
-    const db = readDb();
-    const orderIndex = db.orders.findIndex(o => o.id === id);
-    if (orderIndex === -1) {
-      return res.status(404).json({ error: 'Order not found' });
-    }
-
-    const removedOrder = db.orders.splice(orderIndex, 1)[0];
-
-    // Log cancellation email notification to the customer
-    const cancelNotification: Notification = {
-      id: 'notif-' + Math.random().toString(36).substr(2, 9),
-      title: `Order #${id} Cancelled/Refused`,
-      message: `Your order #${id} has been refused or removed from the system by an administrator.`,
-      type: 'order',
-      createdAt: new Date().toISOString(),
-      read: false
-    };
-
-    db.notifications.push(cancelNotification);
-
-    db.emailsSent.push({
-      id: 'email-' + Math.random().toString(36).substr(2, 9),
-      to: removedOrder.email,
-      subject: `Order Cancelled/Refused: #${id}`,
-      body: `Hello,\n\nWe regret to inform you that your order #${id} for the curated piece(s) has been cancelled or refused by the curation team.\n\nAny pre-authorizations or payments have been released/refunded.\n\nThank you for your understanding,\nEthos Editorial Care`,
-      timestamp: new Date().toISOString()
-    });
-
-    writeDb(db);
-
-    // Push live update to the client so the client updates
-    broadcast('ORDER_STATUS_CHANGED', {
-      orderId: id,
-      status: 'refused',
-      email: removedOrder.email,
-      notification: cancelNotification
-    });
-
-    res.json({ message: 'Order successfully deleted/refused', id });
   });
 
   // Support / Contact Form
@@ -814,13 +823,17 @@ async function startServer() {
     res.json({ success: true, message: 'Message sent successfully. Check console log or Email Log tab for email simulation.' });
   });
 
-  // Admin logs & emails preview routes
+  // Admin logs & emails preview routes (Enforces Row-Level Security checks)
   app.get('/api/admin/system-logs', authenticateToken, (req: any, res) => {
-    if (req.user.role !== 'admin') {
-      return res.status(403).json({ error: 'Administrative privileges required' });
+    try {
+      const logs = querySecured('logs', req.user);
+      const emails = querySecured('emailsSent', req.user);
+      const users = querySecured('users', req.user);
+      res.json({ logs, emails, users });
+    } catch (err: any) {
+      console.error('RLS retrieval error on system-logs:', err);
+      res.status(403).json({ error: err.message || 'Row-Level Security violation' });
     }
-    const db = readDb();
-    res.json({ logs: db.logs, emails: db.emailsSent, users: db.users });
   });
 
   // Mount Vite middleware for development, serving assets in production
@@ -845,20 +858,56 @@ async function startServer() {
           const rootTemplatePath = path.join(process.cwd(), 'index.html');
           if (fs.existsSync(rootTemplatePath)) {
             let html = fs.readFileSync(rootTemplatePath, 'utf-8');
-            html = html.replace('/src/main.tsx', '/assets/index.js');
+            
+            // Dynamically search the assets directory for compiled CSS and JS
+            let jsFile = '/assets/index.js';
+            let cssFile = '';
+            const assetsDir = path.join(distPath, 'assets');
+            if (fs.existsSync(assetsDir)) {
+              try {
+                const files = fs.readdirSync(assetsDir);
+                const foundJs = files.find(f => f.startsWith('index-') && f.endsWith('.js'));
+                const foundCss = files.find(f => f.startsWith('index-') && f.endsWith('.css'));
+                if (foundJs) jsFile = `/assets/${foundJs}`;
+                if (foundCss) cssFile = `/assets/${foundCss}`;
+              } catch (e) {
+                console.error('Error scanning assets for fallback:', e);
+              }
+            }
+
+            html = html.replace('/src/main.tsx', jsFile);
+            if (cssFile) {
+              html = html.replace('</head>', `<link rel="stylesheet" href="${cssFile}"></head>`);
+            }
             res.status(200).set({ 'Content-Type': 'text/html' }).send(html);
           } else {
             // Memory direct render fallback to ensure the application renders regardless
+            let jsFile = '/assets/index.js';
+            let cssFile = '';
+            const assetsDir = path.join(distPath, 'assets');
+            if (fs.existsSync(assetsDir)) {
+              try {
+                const files = fs.readdirSync(assetsDir);
+                const foundJs = files.find(f => f.startsWith('index-') && f.endsWith('.js'));
+                const foundCss = files.find(f => f.startsWith('index-') && f.endsWith('.css'));
+                if (foundJs) jsFile = `/assets/${foundJs}`;
+                if (foundCss) cssFile = `/assets/${foundCss}`;
+              } catch (e) {}
+            }
+            
+            const cssTag = cssFile ? `<link rel="stylesheet" href="${cssFile}" />` : '';
+
             res.status(200).set({ 'Content-Type': 'text/html' }).send(`<!doctype html>
 <html lang="en">
   <head>
     <meta charset="UTF-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
     <title>Ethos Editorial</title>
+    ${cssTag}
   </head>
   <body class="bg-slate-50 dark:bg-slate-950 text-slate-900 dark:text-slate-100">
     <div id="root"></div>
-    <script type="module" src="/assets/index.js"></script>
+    <script type="module" src="${jsFile}"></script>
   </body>
 </html>`);
           }

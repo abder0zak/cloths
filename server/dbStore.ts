@@ -39,6 +39,12 @@ export function decryptText(encryptedText: string): string {
 const DB_DIR = path.join(process.cwd(), 'data');
 const DB_FILE = path.join(DB_DIR, 'db.json');
 
+export interface RLSUser {
+  id: string;
+  email: string;
+  role: 'user' | 'admin';
+}
+
 interface DatabaseSchema {
   users: User[];
   passwords: Record<string, string>; // userId -> password hash
@@ -84,4 +90,215 @@ export function writeDb(data: DatabaseSchema) {
   } catch (err) {
     console.error('Error writing DB', err);
   }
+}
+
+/**
+ * ROW LEVEL SECURITY (RLS) ENGINE POLICIES
+ */
+export const RLSPolicies = {
+  orders: {
+    select: (row: Order, user: RLSUser) => 
+      user.role === 'admin' || row.email.toLowerCase() === user.email.toLowerCase(),
+    insert: (row: Order, user: RLSUser) => 
+      user.role === 'admin' || row.email.toLowerCase() === user.email.toLowerCase(),
+    update: (row: Order, user: RLSUser) => 
+      user.role === 'admin',
+    delete: (row: Order, user: RLSUser) => 
+      user.role === 'admin'
+  },
+  notifications: {
+    select: (row: Notification, user: RLSUser) => 
+      true, // General announcements or system-wide triggers
+    insert: (row: Notification, user: RLSUser) => 
+      user.role === 'admin',
+    update: (row: Notification, user: RLSUser) => 
+      user.role === 'admin' || row.id !== undefined, // Standard state modification permitted
+    delete: (row: Notification, user: RLSUser) => 
+      user.role === 'admin'
+  },
+  logs: {
+    select: (row: any, user: RLSUser) => 
+      user.role === 'admin' || row.userId === user.id,
+    insert: (row: any, user: RLSUser | null) => 
+      true, // Server operations or registration hooks
+    update: (row: any, user: RLSUser) => 
+      false, // STRICTLY IMMUTABLE AUDIT TRAIL
+    delete: (row: any, user: RLSUser) => 
+      false  // STRICTLY IMMUTABLE AUDIT TRAIL
+  },
+  emailsSent: {
+    select: (row: any, user: RLSUser) => 
+      user.role === 'admin' || row.to.toLowerCase() === user.email.toLowerCase(),
+    insert: (row: any, user: RLSUser | null) => 
+      true, // Mail delivery loops are automated
+    update: (row: any, user: RLSUser) => 
+      false, // IMMUTABLE
+    delete: (row: any, user: RLSUser) => 
+      false  // IMMUTABLE
+  },
+  users: {
+    select: (row: User, user: RLSUser) => 
+      user.role === 'admin' || row.id === user.id,
+    insert: (row: User, user: RLSUser | null) => 
+      true, // Registration permitted
+    update: (row: User, user: RLSUser) => 
+      user.role === 'admin' || row.id === user.id,
+    delete: (row: User, user: RLSUser) => 
+      user.role === 'admin'
+  }
+};
+
+/**
+ * Enforces Row Level Security for standard SELECT queries
+ */
+export function querySecured<K extends 'orders' | 'notifications' | 'logs' | 'emailsSent' | 'users'>(
+  table: K,
+  user: RLSUser
+): DatabaseSchema[K] {
+  const db = readDb();
+  const rows = db[table] as any[];
+  const policy = RLSPolicies[table];
+
+  if (!policy) {
+    throw new Error(`RLS POLICY FAILURE: No security rules configured for collection "${table}"`);
+  }
+
+  // Filter rows according to user's identity context
+  return rows.filter((row) => {
+    try {
+      return policy.select(row, user);
+    } catch (e) {
+      console.error(`RLS Selection Exception on table ${table}:`, e);
+      return false;
+    }
+  }) as DatabaseSchema[K];
+}
+
+/**
+ * Enforces Row Level Security for INSERT transactions
+ */
+export function insertSecured<K extends 'orders' | 'notifications' | 'logs' | 'emailsSent' | 'users'>(
+  table: K,
+  row: any,
+  user: RLSUser | null,
+  clientIp?: string
+): void {
+  const db = readDb();
+  const policy = RLSPolicies[table];
+
+  if (!policy) {
+    throw new Error(`RLS POLICY FAILURE: No security rules configured for collection "${table}"`);
+  }
+
+  // Evaluate insert permission
+  const isAuthorized = user ? policy.insert(row, user) : (table === 'users' || table === 'logs' || table === 'emailsSent');
+
+  if (!isAuthorized) {
+    const errorMsg = `RLS TRANSACTION DENIED: Unauthorized insert into "${table}" bypassed core authorization checks.`;
+    
+    // Register security breach log
+    db.logs.push({
+      id: 'log-' + Math.random().toString(36).substr(2, 9),
+      userId: user ? user.id : 'anonymous',
+      event: `SECURITY VIOLATION DETECTED: Row-level write validation failed for table "${table}". Request IP: ${clientIp || '127.0.0.1'}.`,
+      ip: clientIp || '127.0.0.1',
+      timestamp: new Date().toISOString()
+    });
+    writeDb(db);
+    
+    throw new Error(errorMsg);
+  }
+
+  (db[table] as any[]).push(row);
+  writeDb(db);
+}
+
+/**
+ * Enforces Row Level Security for UPDATE transactions
+ */
+export function updateSecured<K extends 'orders' | 'notifications' | 'logs' | 'emailsSent' | 'users'>(
+  table: K,
+  id: string,
+  updates: any,
+  user: RLSUser,
+  clientIp?: string
+): boolean {
+  const db = readDb();
+  const rows = db[table] as any[];
+  const itemIndex = rows.findIndex((r: any) => r.id === id);
+
+  if (itemIndex === -1) {
+    return false;
+  }
+
+  const existingItem = rows[itemIndex];
+  const policy = RLSPolicies[table];
+
+  if (!policy) {
+    throw new Error(`RLS POLICY FAILURE: No security rules configured for collection "${table}"`);
+  }
+
+  // Validate update operation
+  const isAuthorized = policy.update(existingItem, user);
+
+  if (!isAuthorized) {
+    db.logs.push({
+      id: 'log-' + Math.random().toString(36).substr(2, 9),
+      userId: user.id,
+      event: `SECURITY VIOLATION DETECTED: Row-level update violation on table "${table}" for row ID "${id}". Request IP: ${clientIp || '127.0.0.1'}.`,
+      ip: clientIp || '127.0.0.1',
+      timestamp: new Date().toISOString()
+    });
+    writeDb(db);
+    throw new Error(`RLS TRANSACTION DENIED: Unauthorized update attempts on protected entity.`);
+  }
+
+  // Merge updates
+  rows[itemIndex] = { ...existingItem, ...updates };
+  writeDb(db);
+  return true;
+}
+
+/**
+ * Enforces Row Level Security for DELETE transactions
+ */
+export function deleteSecured<K extends 'orders' | 'notifications' | 'logs' | 'emailsSent' | 'users'>(
+  table: K,
+  id: string,
+  user: RLSUser,
+  clientIp?: string
+): boolean {
+  const db = readDb();
+  const rows = db[table] as any[];
+  const itemIndex = rows.findIndex((r: any) => r.id === id);
+
+  if (itemIndex === -1) {
+    return false;
+  }
+
+  const existingItem = rows[itemIndex];
+  const policy = RLSPolicies[table];
+
+  if (!policy) {
+    throw new Error(`RLS POLICY FAILURE: No security rules configured for collection "${table}"`);
+  }
+
+  // Validate delete operation
+  const isAuthorized = policy.delete(existingItem, user);
+
+  if (!isAuthorized) {
+    db.logs.push({
+      id: 'log-' + Math.random().toString(36).substr(2, 9),
+      userId: user.id,
+      event: `SECURITY VIOLATION DETECTED: Row-level delete violation on table "${table}" for row ID "${id}". Request IP: ${clientIp || '127.0.0.1'}.`,
+      ip: clientIp || '127.0.0.1',
+      timestamp: new Date().toISOString()
+    });
+    writeDb(db);
+    throw new Error(`RLS TRANSACTION DENIED: Unauthorized deletion of protected entity.`);
+  }
+
+  rows.splice(itemIndex, 1);
+  writeDb(db);
+  return true;
 }

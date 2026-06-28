@@ -3,6 +3,7 @@ import path from 'path';
 import crypto from 'crypto';
 import jwt from 'jsonwebtoken';
 import http from 'http';
+import fs from 'fs';
 import { WebSocketServer, WebSocket } from 'ws';
 import { readDb, writeDb, encryptText, decryptText } from './server/dbStore.js';
 import { rateLimiterMiddleware } from './server/rateLimiter.js';
@@ -834,7 +835,38 @@ async function startServer() {
     const distPath = path.join(process.cwd(), 'dist');
     app.use(express.static(distPath));
     app.get('*', (req, res) => {
-      res.sendFile(path.join(distPath, 'index.html'));
+      try {
+        const templatePath = path.join(distPath, 'index.html');
+        if (fs.existsSync(templatePath)) {
+          const html = fs.readFileSync(templatePath, 'utf-8');
+          res.status(200).set({ 'Content-Type': 'text/html' }).send(html);
+        } else {
+          // Fallback to reading root index.html if dist/index.html is missing
+          const rootTemplatePath = path.join(process.cwd(), 'index.html');
+          if (fs.existsSync(rootTemplatePath)) {
+            let html = fs.readFileSync(rootTemplatePath, 'utf-8');
+            html = html.replace('/src/main.tsx', '/assets/index.js');
+            res.status(200).set({ 'Content-Type': 'text/html' }).send(html);
+          } else {
+            // Memory direct render fallback to ensure the application renders regardless
+            res.status(200).set({ 'Content-Type': 'text/html' }).send(`<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>Ethos Editorial</title>
+  </head>
+  <body class="bg-slate-50 dark:bg-slate-950 text-slate-900 dark:text-slate-100">
+    <div id="root"></div>
+    <script type="module" src="/assets/index.js"></script>
+  </body>
+</html>`);
+          }
+        }
+      } catch (err: any) {
+        console.error('HTML Render Error:', err);
+        res.status(500).send('Error rendering the page.');
+      }
     });
   }
 

@@ -107,7 +107,7 @@ export default function AuthModal({ isOpen, onClose, onAuthSuccess }: AuthModalP
 
         {/* Brand Header */}
         <div className="text-center mb-8">
-          <h2 className="font-display-lg text-2xl uppercase tracking-tighter">Ethos Editorial</h2>
+          <h2 className="font-display-lg text-2xl uppercase tracking-tighter">Cloths Shop</h2>
           <p className="text-[10px] uppercase tracking-widest text-[#747878] mt-1">
             {isSignUp ? 'Create your secure account' : 'Access your bespoke dashboard'}
           </p>
@@ -217,7 +217,7 @@ export default function AuthModal({ isOpen, onClose, onAuthSuccess }: AuthModalP
 
         {/* Toggle Footer */}
         <div className="text-center text-xs text-[#747878]">
-          <span>{isSignUp ? 'Already registered?' : 'New to Ethos Editorial?'}</span>{' '}
+          <span>{isSignUp ? 'Already registered?' : 'New to Cloths Shop?'}</span>{' '}
           <button
             onClick={() => setIsSignUp(!isSignUp)}
             className="text-slate-900 dark:text-slate-100 font-bold underline hover:text-indigo-600 dark:hover:text-indigo-400 transition-colors"

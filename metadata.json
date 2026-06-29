@@ -1,5 +1,5 @@
 {
-  "name": "Ethos Editorial",
+  "name": "Cloths Shop",
   "description": "Effortless luxury editorial digital shopping boutique featuring real-time order tracking, encrypted delivery channels, JWT authentication, and resilient rate limiting.",
   "requestFramePermissions": [],
   "majorCapabilities": ["MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"]

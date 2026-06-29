@@ -32,7 +32,7 @@ export default function PrivacyPolicy() {
         <span className="text-[10px] uppercase tracking-widest text-indigo-600 dark:text-indigo-400 font-extrabold">Regulatory Standards</span>
         <h1 className="font-display text-4xl text-slate-900 dark:text-slate-100 font-black uppercase tracking-tight">Bespoke Privacy Policy</h1>
         <p className="text-xs text-slate-500 max-w-lg mx-auto leading-relaxed">
-          At Ethos Editorial, we believe digital elegance is rooted in privacy and discretion. This charter outlines our cryptographic methods and session governance.
+          At Cloths Shop, we believe digital elegance is rooted in privacy and discretion. This charter outlines our cryptographic methods and session governance.
         </p>
       </header>
 
@@ -55,8 +55,8 @@ export default function PrivacyPolicy() {
 
       {/* Footer Summary */}
       <footer className="p-6 bg-slate-50 dark:bg-slate-950/20 rounded-3xl border border-slate-200 dark:border-slate-800 text-center text-xs text-slate-500 space-y-2">
-        <p><strong>Compliance Officer:</strong> privacy@ethos-editorial.com</p>
-        <p>© 2026 Ethos Editorial Inc. Last amended: June 28, 2026. All rights reserved.</p>
+        <p><strong>Compliance Officer:</strong> privacy@cloths-shop.com</p>
+        <p>© 2026 Cloths Shop Inc. Last amended: June 28, 2026. All rights reserved.</p>
       </footer>
     </div>
   );

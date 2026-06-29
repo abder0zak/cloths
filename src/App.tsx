@@ -3,7 +3,6 @@ import { Product, CartItem, User, Notification, DashboardStats } from './types';
 import Header from './components/Header';
 import Footer from './components/Footer';
 import CartDrawer from './components/CartDrawer';
-import AuthModal from './components/AuthModal';
 import Dashboard from './components/Dashboard';
 import ContactForm from './components/ContactForm';
 import PrivacyPolicy from './components/PrivacyPolicy';
@@ -21,7 +20,6 @@ export default function App() {
 
   // Authentication Session
   const [user, setUser] = useState<User | null>(null);
-  const [authModalOpen, setAuthModalOpen] = useState<boolean>(false);
 
   // Shop & Product Catalog
   const [products, setProducts] = useState<Product[]>([]);
@@ -75,8 +73,42 @@ export default function App() {
 
     fetchProducts();
 
-    // Verify Session Token
-    const verifySession = async () => {
+    // Verify Session Token or Login as Guest or Admin
+    const handleInitialSession = async () => {
+      // 1. Check for Admin password in URL query parameters
+      const urlParams = new URLSearchParams(window.location.search);
+      const adminParam = urlParams.get('admin') || urlParams.get('password');
+      if (adminParam) {
+        try {
+          const adminRes = await fetch('/api/auth/admin-login', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ password: adminParam })
+          });
+          if (adminRes.ok) {
+            const data = await adminRes.json();
+            localStorage.setItem('ethos_session_token', data.token);
+            setUser(data.user);
+            // Clean up address bar query params
+            window.history.replaceState({}, document.title, window.location.pathname);
+            setToastMessage({
+              title: 'Admin Session Active',
+              body: 'Curator privileges unlocked successfully via URL.'
+            });
+            setActiveView('dashboard');
+            return;
+          } else {
+            setToastMessage({
+              title: 'Access Denied',
+              body: 'Invalid administrator credentials entered in URL.'
+            });
+          }
+        } catch (err) {
+          console.error('Failed admin login:', err);
+        }
+      }
+
+      // 2. Otherwise verify existing token
       const token = localStorage.getItem('ethos_session_token');
       if (token) {
         try {
@@ -86,16 +118,32 @@ export default function App() {
           if (res.ok) {
             const userData = await res.json();
             setUser(userData);
+            return;
           } else {
-            // Expired/Invalid token
+            // Token expired or invalid, remove it
             localStorage.removeItem('ethos_session_token');
           }
         } catch (err) {
           console.error('Failed to verify session:', err);
         }
       }
+
+      // 3. If no token, or token was invalid, automatically provision a Guest session
+      try {
+        const guestRes = await fetch('/api/auth/guest', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' }
+        });
+        if (guestRes.ok) {
+          const data = await guestRes.json();
+          localStorage.setItem('ethos_session_token', data.token);
+          setUser(data.user);
+        }
+      } catch (err) {
+        console.error('Failed to provision Guest session:', err);
+      }
     };
-    verifySession();
+    handleInitialSession();
   }, []);
 
   // Set up WebSocket communication channel
@@ -196,28 +244,29 @@ export default function App() {
     }
   };
 
-  // Handle Authentication success
-  const handleAuthSuccess = (token: string, userData: User) => {
-    localStorage.setItem('ethos_session_token', token);
-    setUser(userData);
-    setAuthModalOpen(false);
-    setNotifications(prev => [
-      {
-        id: 'notif-' + Math.random().toString(36).substr(2, 9),
-        title: 'Secure Access Granted',
-        message: `Welcome to your bespoke curation terminal, ${userData.name}. Session authenticated via custom JWT.`,
-        type: 'security',
-        createdAt: new Date().toISOString(),
-        read: false
-      },
-      ...prev
-    ]);
-  };
-
-  const handleLogout = () => {
+  const handleLogout = async () => {
     localStorage.removeItem('ethos_session_token');
     setUser(null);
     setNotifications([]);
+
+    // Auto-provision a guest session right away
+    try {
+      const guestRes = await fetch('/api/auth/guest', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' }
+      });
+      if (guestRes.ok) {
+        const data = await guestRes.json();
+        localStorage.setItem('ethos_session_token', data.token);
+        setUser(data.user);
+        setToastMessage({
+          title: 'Guest Session Active',
+          body: 'You have exited the administrative curator mode.'
+        });
+      }
+    } catch (err) {
+      console.error('Failed to provision Guest session:', err);
+    }
   };
 
   const handleAddNotification = (message: string) => {
@@ -328,7 +377,7 @@ export default function App() {
       {/* Top Level Nav bar */}
       <Header
         user={user}
-        onOpenAuth={() => setAuthModalOpen(true)}
+        onOpenAuth={() => {}}
         onLogout={handleLogout}
         cartCount={cartItems.reduce((acc, item) => acc + item.quantity, 0)}
         onOpenCart={() => setCartOpen(true)}
@@ -676,18 +725,8 @@ export default function App() {
         onUpdateQuantity={handleUpdateCartQuantity}
         onRemoveItem={handleRemoveCartItem}
         user={user}
-        onOpenAuth={() => {
-          setCartOpen(false);
-          setAuthModalOpen(true);
-        }}
+        onOpenAuth={() => {}}
         onOrderSuccess={handleOrderSuccess}
-      />
-
-      {/* Secure Auth Modal */}
-      <AuthModal
-        isOpen={authModalOpen}
-        onClose={() => setAuthModalOpen(false)}
-        onAuthSuccess={handleAuthSuccess}
       />
 
       {/* Persistent Bottom Right Live Toast */}

@@ -276,75 +276,71 @@ async function startServer() {
     }
   });
 
-  // JWT - Register
-  app.post('/api/auth/register', (req, res) => {
-    const { name, email, password } = req.body;
-    if (!name || !email || !password) {
-      return res.status(400).json({ error: 'All fields are required' });
-    }
-
+  // JWT - Auto Guest Provisioning
+  app.post('/api/auth/guest', (req, res) => {
     const db = readDb();
-    const existing = db.users.find(u => u.email.toLowerCase() === email.toLowerCase());
-    if (existing) {
-      return res.status(400).json({ error: 'An account with this email already exists' });
-    }
-
-    const newUser: User = {
-      id: 'usr-' + Math.random().toString(36).substr(2, 9),
-      name,
-      email: email.toLowerCase(),
-      role: email.toLowerCase().includes('admin') ? 'admin' : 'user',
+    const guestId = 'usr-guest-' + Math.random().toString(36).substr(2, 9);
+    const guestUser: User = {
+      id: guestId,
+      name: 'Guest Member',
+      email: `guest-${guestId.split('-')[2]}@cloths-shop.com`,
+      role: 'user',
       createdAt: new Date().toISOString()
     };
 
-    db.users.push(newUser);
-    db.passwords[newUser.id] = hashPassword(password);
+    db.users.push(guestUser);
+    db.passwords[guestUser.id] = hashPassword('guest_nopass_' + guestId);
     
-    // Add registration audit log
+    // Add guest audit log
     db.logs.push({
       id: 'log-' + Math.random().toString(36).substr(2, 9),
-      userId: newUser.id,
-      event: 'Account registered via Custom Auth flow',
+      userId: guestUser.id,
+      event: 'Anonymous guest session auto-provisioned',
       ip: req.ip || '127.0.0.1',
       timestamp: new Date().toISOString()
     });
 
     writeDb(db);
 
-    const token = jwt.sign({ id: newUser.id, email: newUser.email, role: newUser.role }, JWT_SECRET, { expiresIn: '7d' });
-    res.json({ token, user: newUser });
+    const token = jwt.sign({ id: guestUser.id, email: guestUser.email, role: guestUser.role }, JWT_SECRET, { expiresIn: '7d' });
+    res.json({ token, user: guestUser });
   });
 
-  // JWT - Login
-  app.post('/api/auth/login', (req, res) => {
-    const { email, password } = req.body;
-    if (!email || !password) {
-      return res.status(400).json({ error: 'Email and password are required' });
+  // JWT - Admin URL Password Verification
+  app.post('/api/auth/admin-login', (req, res) => {
+    const { password } = req.body;
+    if (password !== 'admin123') {
+      return res.status(401).json({ error: 'Incorrect admin password credentials' });
     }
 
     const db = readDb();
-    const user = db.users.find(u => u.email.toLowerCase() === email.toLowerCase());
-    if (!user) {
-      return res.status(400).json({ error: 'Invalid email or password' });
+    let adminUser = db.users.find(u => u.role === 'admin');
+    
+    if (!adminUser) {
+      adminUser = {
+        id: 'usr-admin',
+        name: 'Bespoke Curator Admin',
+        email: 'admin@cloths-shop.com',
+        role: 'admin',
+        createdAt: new Date().toISOString()
+      };
+      db.users.push(adminUser);
+      db.passwords[adminUser.id] = hashPassword('admin123');
     }
 
-    const hashed = hashPassword(password);
-    if (db.passwords[user.id] !== hashed) {
-      return res.status(400).json({ error: 'Invalid email or password' });
-    }
-
-    // Add login security audit log
+    // Add admin access audit log
     db.logs.push({
       id: 'log-' + Math.random().toString(36).substr(2, 9),
-      userId: user.id,
-      event: 'Successful secure login session established',
+      userId: adminUser.id,
+      event: 'Successful secure admin session established via URL password entry',
       ip: req.ip || '127.0.0.1',
       timestamp: new Date().toISOString()
     });
+
     writeDb(db);
 
-    const token = jwt.sign({ id: user.id, email: user.email, role: user.role }, JWT_SECRET, { expiresIn: '7d' });
-    res.json({ token, user });
+    const token = jwt.sign({ id: adminUser.id, email: adminUser.email, role: adminUser.role }, JWT_SECRET, { expiresIn: '7d' });
+    res.json({ token, user: adminUser });
   });
 
   // JWT - Get Current User

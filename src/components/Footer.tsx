@@ -26,7 +26,7 @@ export default function Footer({ onChangeView, onSubscribeNotification }: Footer
         {/* Brand Core Column */}
         <div className="space-y-6">
           <h2 className="font-display text-xl uppercase tracking-tight text-slate-900 dark:text-slate-100 font-black">
-            Ethos Editorial
+            Cloths Shop
           </h2>
           <p className="text-xs md:text-sm text-slate-500 dark:text-slate-400 leading-relaxed max-w-xs">
             Curating the modern wardrobe with a focus on silhouette, sustainability, and quality craftsmanship.
@@ -126,7 +126,7 @@ export default function Footer({ onChangeView, onSubscribeNotification }: Footer
       </div>
 
       <div className="px-5 md:px-16 py-6 border-t border-slate-200/50 dark:border-slate-800/30 text-center max-w-[1440px] mx-auto text-[9px] uppercase tracking-widest text-slate-400">
-        <p>© 2026 Ethos Editorial. All rights reserved.</p>
+        <p>© 2026 Cloths Shop. All rights reserved.</p>
       </div>
     </footer>
   );

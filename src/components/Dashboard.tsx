@@ -482,7 +482,7 @@ export default function Dashboard({
     doc.setTextColor(116, 120, 120);
     doc.text('All private addresses are sealed via secure AES-256-CBC cipher blocks.', 20, 284);
 
-    doc.save(`Ethos_Editorial_Report_${user.name.replace(/\s+/g, '_')}.pdf`);
+    doc.save(`Cloths_Shop_Report_${user.name.replace(/\s+/g, '_')}.pdf`);
   };
 
   const getStatusIcon = (status: string) => {

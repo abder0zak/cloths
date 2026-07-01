@@ -44,10 +44,10 @@ export default function Header({
           className="flex items-center gap-3 group text-left"
         >
           <div className="w-10 h-10 bg-indigo-600 rounded-xl flex items-center justify-center font-display-lg font-bold text-white shadow-lg shadow-indigo-500/20 group-hover:scale-105 transition-transform duration-300">
-            EE
+            CS
           </div>
           <h1 className="font-display text-xl font-extrabold tracking-tight uppercase text-slate-900 dark:text-slate-100">
-            Ethos<span className="text-indigo-600 dark:text-indigo-400 font-medium">Editorial</span>
+            Cloths<span className="text-indigo-600 dark:text-indigo-400 font-medium">Shop</span>
           </h1>
         </button>
 

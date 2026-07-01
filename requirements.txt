@@ -1,27 +1,8 @@
-# Node.js/TypeScript Project Dependencies (Equivalent Modules)
-# Generated requirements.txt as requested
-
-# Production Dependencies
-express==4.21.2
-dotenv==17.2.3
-jsonwebtoken==9.0.3
-jspdf==4.2.1
-lucide-react==0.546.0
-motion==12.23.24
-react==19.0.1
-react-dom==19.0.1
-ws==8.21.0
-@google/genai==2.4.0
-@tailwindcss/vite==4.1.14
-@vitejs/plugin-react==5.0.4
-
-# Development Dependencies
-tsx==4.21.0
-esbuild==0.25.0
-typescript==5.8.2
-vite==6.2.3
-tailwindcss==4.1.14
-@types/express==4.17.21
-@types/jsonwebtoken==9.0.10
-@types/node==22.14.0
-@types/ws==8.18.1
+fastapi>=0.110.0
+uvicorn>=0.28.0
+pydantic>=2.6.0
+PyJWT>=2.8.0
+python-multipart>=0.0.9
+websockets>=12.0
+cryptography>=42.0.0
+httpx>=0.27.0

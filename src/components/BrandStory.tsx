@@ -12,7 +12,7 @@ export default function BrandStory({ onChangeView }: { onChangeView: (view: stri
           Quiet Sophistication through deliberate restraint
         </h1>
         <p className="text-sm md:text-base text-slate-500 dark:text-slate-400 leading-relaxed font-light">
-          We construct pieces that outlast seasonal tides. At Cloths Shop, our core belief is that every thread carries an architectural intent, combining sustainable sourcing with structural precision.
+          We construct pieces that outlast seasonal tides. At Ethos Editorial, our core belief is that every thread carries an architectural intent, combining sustainable sourcing with structural precision.
         </p>
       </section>
 
@@ -57,7 +57,7 @@ export default function BrandStory({ onChangeView }: { onChangeView: (view: stri
             Designed for the modern, effortless wardrobe
           </h2>
           <p className="text-xs md:text-sm text-slate-600 dark:text-slate-400 leading-relaxed">
-            Established in Milan and expanded digitally, Cloths Shop represents a return to classical atelier practices. By establishing secure full-stack shopping platforms and micro-dispatch hubs, we deliver high-fashion pieces directly with complete digital security, protecting both physical quality and virtual data.
+            Established in Milan and expanded digitally, Ethos Editorial represents a return to classical atelier practices. By establishing secure full-stack shopping platforms and micro-dispatch hubs, we deliver high-fashion pieces directly with complete digital security, protecting both physical quality and virtual data.
           </p>
           <button 
             onClick={() => onChangeView('shop')}
@@ -70,8 +70,8 @@ export default function BrandStory({ onChangeView }: { onChangeView: (view: stri
         <div className="aspect-[4/3] bg-slate-50 dark:bg-slate-950/20 border border-slate-200 dark:border-slate-800 rounded-3xl flex items-center justify-center p-8 text-center relative overflow-hidden">
           {/* Typographic Artwork */}
           <div className="space-y-2 relative z-10 select-none">
-            <span className="font-display text-6xl text-slate-950/5 dark:text-white/5 font-black block">CLOTHS</span>
-            <span className="font-display text-4xl text-indigo-600/25 dark:text-indigo-400/25 font-black tracking-widest block">SHOP</span>
+            <span className="font-display text-6xl text-slate-950/5 dark:text-white/5 font-black block">ETHOS</span>
+            <span className="font-display text-4xl text-indigo-600/25 dark:text-indigo-400/25 font-black tracking-widest block">EDITORIAL</span>
             <span className="font-mono text-[9px] text-slate-400 dark:text-slate-600 uppercase block">Atelier Coordinates: 45.4642° N, 9.1900° E</span>
           </div>
           <div className="absolute top-0 right-0 p-4 border-b border-l border-slate-200 dark:border-slate-800 text-[9px] font-mono text-slate-400">

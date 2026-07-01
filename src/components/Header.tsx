@@ -44,10 +44,10 @@ export default function Header({
           className="flex items-center gap-3 group text-left"
         >
           <div className="w-10 h-10 bg-indigo-600 rounded-xl flex items-center justify-center font-display-lg font-bold text-white shadow-lg shadow-indigo-500/20 group-hover:scale-105 transition-transform duration-300">
-            CS
+            EE
           </div>
           <h1 className="font-display text-xl font-extrabold tracking-tight uppercase text-slate-900 dark:text-slate-100">
-            Cloths<span className="text-indigo-600 dark:text-indigo-400 font-medium">Shop</span>
+            Ethos<span className="text-indigo-600 dark:text-indigo-400 font-medium">Editorial</span>
           </h1>
         </button>
 
@@ -128,7 +128,7 @@ export default function Header({
                 >
                   <UserIcon size={17} className="text-indigo-600 dark:text-indigo-400" />
                   <span className="hidden md:inline font-bold pr-1 text-slate-800 dark:text-slate-200">
-                    {user.role === 'admin' ? 'Admin' : 'Guest'}
+                    {user.name.split(' ')[0]}
                   </span>
                 </button>
                 {profileDropdownOpen && (
@@ -136,13 +136,9 @@ export default function Header({
                     <div className="px-3 py-2.5 border-b border-slate-100 dark:border-slate-800 mb-1">
                       <p className="text-xs font-bold text-slate-900 dark:text-slate-100 truncate">{user.name}</p>
                       <p className="text-[10px] text-slate-500 truncate">{user.email}</p>
-                      {user.role === 'admin' ? (
+                      {user.role === 'admin' && (
                         <span className="mt-1.5 inline-flex items-center gap-1 bg-indigo-500/10 border border-indigo-500/20 text-indigo-600 dark:text-indigo-400 text-[9px] font-bold px-2 py-0.5 rounded-full uppercase">
                           <ShieldCheck size={10} /> Curator/Admin
-                        </span>
-                      ) : (
-                        <span className="mt-1.5 inline-flex items-center gap-1 bg-slate-500/10 border border-slate-500/20 text-slate-500 text-[9px] font-bold px-2 py-0.5 rounded-full uppercase">
-                          Guest Mode
                         </span>
                       )}
                     </div>
@@ -156,24 +152,29 @@ export default function Header({
                       <LayoutDashboard size={14} className="text-indigo-500" />
                       Dashboard
                     </button>
-                    {user.role === 'admin' && (
-                      <button
-                        onClick={() => {
-                          onLogout();
-                          setProfileDropdownOpen(false);
-                          onChangeView('shop');
-                        }}
-                        className="w-full flex items-center gap-2 px-3 py-2 text-xs font-medium uppercase tracking-wider rounded-xl hover:bg-red-500/5 text-red-600 dark:text-red-400"
-                      >
-                        <LogOut size={14} />
-                        Exit Admin
-                      </button>
-                    )}
+                    <button
+                      onClick={() => {
+                        onLogout();
+                        setProfileDropdownOpen(false);
+                        onChangeView('shop');
+                      }}
+                      className="w-full flex items-center gap-2 px-3 py-2 text-xs font-medium uppercase tracking-wider rounded-xl hover:bg-red-500/5 text-red-600 dark:text-red-400"
+                    >
+                      <LogOut size={14} />
+                      Sign Out
+                    </button>
                   </div>
                 )}
               </div>
             ) : (
-              <div className="w-8 h-8 rounded-full border border-dashed border-slate-300 animate-pulse" />
+              <button
+                onClick={onOpenAuth}
+                className="flex items-center gap-2 p-2 px-3 rounded-xl bg-indigo-600 text-white text-xs font-bold uppercase tracking-widest hover:bg-indigo-500 transition-colors shadow-lg shadow-indigo-500/15"
+                id="login-button"
+              >
+                <UserIcon size={15} />
+                <span className="hidden md:inline font-bold">Sign In</span>
+              </button>
             )}
           </div>
 
